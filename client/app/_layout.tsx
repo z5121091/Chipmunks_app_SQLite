@@ -1,7 +1,7 @@
 import '../global.css';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
-import { initDatabase } from '@/utils/database';
+import { initDatabase, cleanupOldEmptyOrders } from '@/utils/database';
 import { Provider } from '@/components/Provider';
 
 /**
@@ -16,6 +16,11 @@ export default function RootLayout() {
         console.log('[App] 开始初始化数据库...');
         await initDatabase();
         console.log('[App] 数据库初始化完成');
+
+        // 清理 7 天前的空订单
+        console.log('[App] 开始清理空订单...');
+        const result = await cleanupOldEmptyOrders();
+        console.log(`[App] 清理完成，删除了 ${result.deletedCount} 个空订单`);
       } catch (error) {
         console.error('[App] 数据库初始化失败:', error);
       }

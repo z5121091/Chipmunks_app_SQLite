@@ -7,6 +7,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -186,6 +187,10 @@ export default function InboundScreen() {
   const [scanRecords, setScanRecords] = useState<ScanRecord[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // 已保存入库记录
+  const [savedInboundModalVisible, setSavedInboundModalVisible] = useState(false);
+  const [savedInboundRecords, setSavedInboundRecords] = useState<any[]>([]);
+
   // Toast
   const { showToast, ToastContainer } = useToast();
 
@@ -196,7 +201,7 @@ export default function InboundScreen() {
   const [confirmedGroups, setConfirmedGroups] = useState<Set<string>>(new Set());
 
   // 加载扫描记录
-  const loadScanRecords = async () => {
+  const loadScanRecords = async (warehouse?: Warehouse | null) => {
     try {
       const savedRecords = await AsyncStorage.getItem(INBOUND_SCAN_RECORDS_KEY);
       if (savedRecords) {
@@ -207,17 +212,18 @@ export default function InboundScreen() {
         if (pendingData) {
           const data = JSON.parse(pendingData);
 
-          // 验证保存时的仓库是否与当前仓库匹配
-          if (data.warehouseId && currentWarehouse) {
-            if (data.warehouseId !== currentWarehouse.id) {
+          // 验证保存时的仓库是否与当前仓库匹配（使用传入的 warehouse 参数，避免状态闭包问题）
+          const currentWarehouseId = warehouse?.id;
+          if (data.warehouseId && currentWarehouseId) {
+            if (data.warehouseId !== currentWarehouseId) {
               // 仓库不匹配，不恢复记录
               console.log('[loadScanRecords] 仓库不匹配，跳过恢复:', {
                 savedWarehouseId: data.warehouseId,
-                currentWarehouseId: currentWarehouse.id,
+                currentWarehouseId: currentWarehouseId,
               });
               return;
             }
-          } else if (!currentWarehouse) {
+          } else if (!currentWarehouseId) {
             // 当前仓库未加载，不恢复记录（等待仓库加载完成后再恢复）
             console.log('[loadScanRecords] 当前仓库未加载，跳过恢复');
             return;
@@ -265,6 +271,29 @@ export default function InboundScreen() {
     }
   };
 
+  // 加载已保存入库记录（最新的入库批次）
+  const loadSavedInboundRecords = async () => {
+    try {
+      // 获取当前仓库的最新入库记录
+      const records = await getAllInboundRecords(currentWarehouse?.id);
+
+      if (records.length === 0) {
+        setSavedInboundRecords([]);
+        return;
+      }
+
+      // 找到最新的入库单号
+      const latestInboundNo = records[0].inbound_no;
+
+      // 筛选出最新入库单号的所有记录
+      const latestRecords = records.filter(r => r.inbound_no === latestInboundNo);
+
+      setSavedInboundRecords(latestRecords);
+    } catch (error) {
+      console.error('加载已保存入库记录失败:', error);
+    }
+  };
+
   // 初始化
   // 自动清理震动和提示音
   useFeedbackCleanup();
@@ -298,11 +327,11 @@ export default function InboundScreen() {
         // 3. 设置当前仓库并等待状态更新
         setCurrentWarehouse(warehouse);
 
-        // 4. 等待状态更新完成（给 React 一帧的时间）
-        await new Promise(resolve => setTimeout(resolve, 0));
+        // 4. 加载扫描记录（直接传入 warehouse 参数，避免状态闭包问题）
+        await loadScanRecords(warehouse);
 
-        // 5. 加载扫描记录（仓库已加载）
-        await loadScanRecords();
+        // 5. 加载已保存入库记录
+        await loadSavedInboundRecords();
 
         // 6. 如果没有入库单号，生成新单号
         if (!inboundNo) {
@@ -695,7 +724,10 @@ export default function InboundScreen() {
       } else {
         showToast(`入库成功！共 ${scanRecords.length} 条`, 'success');
         feedbackConfirm();
-        
+
+        // 刷新已保存入库记录
+        await loadSavedInboundRecords();
+
         // 全部成功才清空记录
         setScanRecords([]);
         setCurrentSupplier(null);
@@ -832,6 +864,19 @@ export default function InboundScreen() {
     }
   }, [scanRecords, currentSupplier, currentWarehouse]);
 
+  // 按型号+版本号分组的统计（用于已保存入库记录弹窗）
+  const savedGroupByModel = useMemo(() => {
+    const groups: { [key: string]: { totalQty: number } } = {};
+    savedInboundRecords.forEach(r => {
+      const key = `${r.scan_model}|${r.version || ''}`;
+      if (!groups[key]) {
+        groups[key] = { totalQty: 0 };
+      }
+      groups[key].totalQty += r.quantity;
+    });
+    return groups;
+  }, [savedInboundRecords]);
+
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <View style={styles.container}>
@@ -841,6 +886,16 @@ export default function InboundScreen() {
             <Feather name="arrow-left" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>扫码入库</Text>
+
+          {/* 已保存入库按钮 */}
+          <TouchableOpacity
+            style={styles.savedBtn}
+            activeOpacity={0.7}
+            onPress={() => setSavedInboundModalVisible(true)}
+          >
+            <Feather name="check-circle" size={14} color={theme.textPrimary} />
+            <Text style={styles.savedBtnText}>{Object.keys(savedGroupByModel).length}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* 顶部：仓库选择 + 供应商 */}
@@ -1030,6 +1085,52 @@ export default function InboundScreen() {
             </View>
           </View>
         )}
+
+        {/* 已保存入库记录弹窗 */}
+        <Modal
+          visible={savedInboundModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSavedInboundModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setSavedInboundModalVisible(false)}
+          >
+            <View style={styles.savedModalContent}>
+              <View style={styles.savedModalHeader}>
+                <Text style={styles.savedModalTitle}>已保存入库</Text>
+                <TouchableOpacity onPress={() => setSavedInboundModalVisible(false)}>
+                  <Feather name="x" size={20} color={theme.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {Object.keys(savedGroupByModel).length === 0 ? (
+                <View style={styles.savedEmpty}>
+                  <Text style={styles.savedEmptyText}>暂无入库记录</Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.savedList}>
+                  {Object.entries(savedGroupByModel).map(([key, data]) => {
+                    const [model, version] = key.split('|');
+                    return (
+                      <View key={key} style={styles.savedItem}>
+                        <View style={styles.savedItemLeft}>
+                          <Text style={styles.savedModel}>{model}</Text>
+                          <Text style={styles.savedVersion}>版本: {version || '-'}</Text>
+                        </View>
+                        <View style={styles.savedItemRight}>
+                          <Text style={styles.savedQty}>{data.totalQty} PCS</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </Screen>
   );

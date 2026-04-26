@@ -1378,6 +1378,52 @@ export const deleteOrder = async (orderNo: string): Promise<void> => {
   }
 };
 
+// 清理 7 天前的空订单（没有关联物料的订单）
+export const cleanupOldEmptyOrders = async (): Promise<{ deletedCount: number }> => {
+  try {
+    console.log('[cleanupOldEmptyOrders] 开始清理 7 天前的空订单');
+    const database = getDb();
+
+    // 计算 7 天前的日期
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoStr = getISODateTime(sevenDaysAgo);
+
+    // 查找 7 天前的空订单（没有关联物料的订单）
+    const emptyOrders = await database.getAllAsync<{ order_no: string }>(
+      `SELECT o.order_no
+       FROM orders o
+       LEFT JOIN materials m ON o.order_no = m.order_no
+       WHERE o.created_at < ?
+         AND m.id IS NULL
+       GROUP BY o.order_no`,
+      [sevenDaysAgoStr]
+    );
+
+    console.log(`[cleanupOldEmptyOrders] 找到 ${emptyOrders.length} 个 7 天前的空订单`);
+
+    if (emptyOrders.length === 0) {
+      return { deletedCount: 0 };
+    }
+
+    // 删除这些空订单
+    const orderNos = emptyOrders.map(o => o.order_no);
+    const placeholders = orderNos.map(() => '?').join(',');
+
+    const result = await database.runAsync(
+      `DELETE FROM orders WHERE order_no IN (${placeholders})`,
+      orderNos
+    );
+
+    console.log(`[cleanupOldEmptyOrders] 删除了 ${result.changes} 个空订单`);
+
+    return { deletedCount: result.changes };
+  } catch (error) {
+    console.error('[cleanupOldEmptyOrders] 清理空订单失败:', error);
+    return { deletedCount: 0 };
+  }
+};
+
 // ========== 物料相关函数 ==========
 
 // 🔥 新增：批量添加物料（使用事务，速度提升 10 倍）
@@ -3381,10 +3427,17 @@ export const parseWithRule = (
 export const clearAllBusinessData = async (): Promise<void> => {
   try {
     const database = getDb();
+    // 清空业务数据
     await database.runAsync('DELETE FROM orders');
     await database.runAsync('DELETE FROM materials');
     await database.runAsync('DELETE FROM unpack_records');
     await database.runAsync('DELETE FROM print_history');
+    await database.runAsync('DELETE FROM inbound_records');
+    await database.runAsync('DELETE FROM inventory_check_records');
+    // 清空解析规则和自定义字段（配置数据）
+    await database.runAsync('DELETE FROM qr_code_rules');
+    await database.runAsync('DELETE FROM custom_fields');
+    // 保留：warehouses、inventory_bindings、system_config
   } catch (error) {
     console.error('清空业务数据失败:', error);
     throw error;

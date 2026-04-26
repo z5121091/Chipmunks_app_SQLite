@@ -397,4 +397,106 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: rf(14),
     color: theme.textSecondary,
   },
+
+  // 已保存入库按钮
+  savedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.sm,
+  },
+
+  savedBtnText: {
+    fontSize: rf(12),
+    fontWeight: '600',
+    color: theme.textPrimary,
+  },
+
+  // 已保存入库弹窗
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+
+  savedModalContent: {
+    width: '100%',
+    maxHeight: '70%',
+    backgroundColor: theme.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+
+  savedModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLight,
+  },
+
+  savedModalTitle: {
+    fontSize: rf(16),
+    fontWeight: '700',
+    color: theme.textPrimary,
+  },
+
+  savedEmpty: {
+    padding: Spacing.xl,
+    alignItems: 'center',
+  },
+
+  savedEmptyText: {
+    fontSize: rf(14),
+    color: theme.textSecondary,
+  },
+
+  savedList: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+
+  savedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+  },
+
+  savedItemLeft: {
+    flex: 1,
+  },
+
+  savedModel: {
+    fontSize: rf(14),
+    fontWeight: '600',
+    color: theme.textPrimary,
+    marginBottom: 2,
+  },
+
+  savedVersion: {
+    fontSize: rf(12),
+    color: theme.textSecondary,
+  },
+
+  savedItemRight: {
+    alignItems: 'flex-end',
+  },
+
+  savedQty: {
+    fontSize: rf(14),
+    fontWeight: '700',
+    color: theme.primary,
+  },
 });

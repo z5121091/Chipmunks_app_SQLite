@@ -542,6 +542,8 @@ export default function PDAScanScreen() {
           showToast(`切换订单: ${code}`, 'warning');
           feedbackSwitchOrder();
         } else {
+          // 立即创建订单到数据库，防止退出页面后订单号丢失
+          await upsertOrder(code, undefined, { id: currentWarehouse.id, name: currentWarehouse.name });
           showToast('新订单', 'success');
           feedbackNewOrder();
         }
