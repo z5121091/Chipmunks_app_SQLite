@@ -3817,10 +3817,23 @@ export const importDatabaseFile = async (): Promise<{
       };
     }
 
-    // Android 7.0 及以下不支持 application/x-sqlite3 类型，使用 */* 替代
+    // Android 对 MIME 类型有严格限制，使用多种类型尝试
+    // 优先使用通配符，确保能选择所有文件
+    let documentType: string | string[] = '*/*';
+
     const Platform = require('react-native').Platform;
-    const isAndroid7OrBelow = Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version <= 24;
-    const documentType = isAndroid7OrBelow ? '*/*' : 'application/x-sqlite3';
+    if (Platform.OS === 'android') {
+      // Android 上使用多种 MIME 类型，提高兼容性
+      documentType = [
+        '*/*',  // 允许所有文件
+        'application/x-sqlite3',
+        'application/vnd.sqlite3',
+        'application/octet-stream',
+      ];
+    } else {
+      // iOS 上可以使用 SQLite 类型
+      documentType = 'application/x-sqlite3';
+    }
 
     // 使用文档选择器选择备份文件
     const result = await DocumentPicker.getDocumentAsync({
@@ -3837,8 +3850,8 @@ export const importDatabaseFile = async (): Promise<{
 
     const sourceFileUri = result.assets[0].uri;
 
-    // 如果选择的是所有文件，需要检查扩展名
-    if (isAndroid7OrBelow && !sourceFileUri.toLowerCase().endsWith('.db')) {
+    // 验证文件扩展名必须是 .db
+    if (!sourceFileUri.toLowerCase().endsWith('.db')) {
       return {
         success: false,
         message: '请选择 .db 格式的数据库文件',
