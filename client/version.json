@@ -1,0 +1,29 @@
+{
+  "version": "V1.0",
+  "versionCode": 1,
+  "buildNumber": 1,
+  "downloadUrl": "http://zx5121091:zx5121091Z..@zx5121091.pw:5005/AppUpdate/app-release.apk",
+  "forceUpdate": false,
+  "appName": "掌上仓库",
+  "companyName": "上海花栗鼠科技有限公司",
+  "companyWebsite": "http://www.chipmunks.com.cn/",
+  "author": "zx5121091",
+  "changelog": [
+    {
+      "version": "V1.0",
+      "date": "2026-04-24",
+      "changes": [
+        { "type": "feat", "text": "掌上仓库 APP 正式发布" },
+        { "type": "feat", "text": "扫码入库：支持物料扫码入库、批次管理、库存统计" },
+        { "type": "feat", "text": "扫码出库：支持订单匹配、扫码出库、物料核对" },
+        { "type": "feat", "text": "库存盘点：定期盘点、差异记录、库存调整" },
+        { "type": "feat", "text": "订单管理：订单列表、时间筛选、仓库筛选、订单详情" },
+        { "type": "feat", "text": "仓库管理：多仓库切换、数据隔离、仓库信息管理" },
+        { "type": "feat", "text": "规则配置：自定义扫码解析规则、支持多种二维码格式" },
+        { "type": "feat", "text": "自定义字段：灵活配置物料字段、扩展性强" },
+        { "type": "feat", "text": "数据导出：支持 CSV 格式导出，方便数据统计和分析" },
+        { "type": "feat", "text": "离线模式：支持离线扫码，数据本地存储" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,400 @@
+import { StyleSheet } from 'react-native';
+import { Spacing, BorderRadius, Theme } from '@/constants/theme';
+import { withAlpha } from '@/utils/colors';
+import { rf } from '@/utils/responsive';
+
+export const createStyles = (theme: Theme) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.backgroundRoot,
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    backgroundColor: theme.backgroundDefault,
+  },
+
+  backButton: {
+    padding: Spacing.sm,
+    marginRight: Spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  headerTitle: {
+    fontSize: rf(18),
+    fontWeight: '700',
+    color: theme.textPrimary,
+  },
+
+  // 顶栏
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingBottom: Spacing.xs,
+    backgroundColor: theme.backgroundDefault,
+    gap: Spacing.xs,
+  },
+
+  warehouseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.sm,
+    minWidth: 80,
+  },
+
+  warehouseText: {
+    fontSize: rf(12),
+    fontWeight: '500',
+    color: theme.textPrimary,
+    maxWidth: 70,
+  },
+
+  supplierTag: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.sm,
+  },
+
+  supplierTagActive: {
+    backgroundColor: theme.success,
+  },
+
+  supplierText: {
+    fontSize: rf(16),
+    fontWeight: '600',
+    color: theme.textPrimary,
+    textAlign: 'center',
+  },
+
+  supplierTextActive: {
+    color: theme.white,
+  },
+
+  // 扫码框（包含输入框和 Toast）
+  scanBox: {
+    marginHorizontal: Spacing.sm,
+    marginTop: Spacing.md,
+    height: rf(56),
+    backgroundColor: theme.backgroundDefault,
+    borderWidth: 2,
+    borderColor: theme.primary,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+
+  scanInput: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+    paddingHorizontal: Spacing.lg,
+    fontSize: rf(18),
+    fontWeight: '500',
+    color: theme.textPrimary,
+    textAlign: 'center',
+  },
+
+  // Toast（完全覆盖在输入框上面）
+  toast: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+
+  toastSuccess: { backgroundColor: theme.success },
+  toastWarning: { backgroundColor: theme.warning },
+  toastError: { backgroundColor: theme.error },
+
+  toastText: {
+    color: theme.white,
+    fontSize: rf(16),
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  // 入库单标签
+  inboundNoTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.sm,
+    marginHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+
+  inboundNoText: {
+    fontSize: rf(12),
+    fontWeight: '600',
+    color: theme.textPrimary,
+    marginRight: Spacing.xs,
+  },
+
+  // 列表
+  listSection: {
+    flex: 1,
+    marginTop: Spacing.md,
+    backgroundColor: theme.backgroundDefault,
+  },
+
+  listHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLight,
+  },
+
+  listTitle: {
+    fontSize: rf(13),
+    fontWeight: '600',
+    color: theme.textSecondary,
+  },
+
+  listCount: {
+    fontSize: rf(13),
+    fontWeight: '600',
+    color: theme.primary,
+  },
+
+  list: {
+    flex: 1,
+  },
+
+  // 空状态
+  empty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: Spacing.xl * 2,
+  },
+
+  emptyText: {
+    fontSize: rf(16),
+    color: theme.textMuted,
+    marginTop: Spacing.md,
+  },
+
+  // 已确认状态的样式
+  itemConfirmed: {
+    backgroundColor: withAlpha(theme.success, 0.15),
+  },
+
+  itemModelConfirmed: {
+    color: theme.success,
+  },
+
+  itemTime: {
+    fontSize: rf(10),
+    color: theme.textMuted,
+    marginTop: 1,
+  },
+
+  // 聚合项容器
+  itemContainer: {
+    marginBottom: Spacing.xs,
+    backgroundColor: theme.backgroundDefault,
+  },
+
+  // 聚合项主行（两行布局）
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: theme.backgroundDefault,
+  },
+
+  // 左侧区域（勾选框 + 型号 + 版本号）
+  itemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  // 勾选框
+  checkbox: {
+    marginRight: rf(6),
+  },
+
+  // 型号内容区域
+  modelContent: {
+    flex: 1,
+  },
+
+  // 型号文字
+  itemModel: {
+    fontSize: rf(14),
+    fontWeight: '600',
+    color: theme.textPrimary,
+  },
+
+  // 版本号（第二行）
+  itemBatch: {
+    fontSize: rf(12),
+    color: theme.textSecondary,
+    marginTop: 1,
+  },
+
+  // 数量（右侧）
+  itemQty: {
+    fontSize: rf(16),
+    fontWeight: '700',
+    color: theme.primary,
+    marginLeft: Spacing.sm,
+  },
+
+  itemQtyConfirmed: {
+    color: theme.success,
+  },
+
+  // 明细容器
+  detailsContainer: {
+    backgroundColor: theme.backgroundTertiary,
+    marginLeft: Spacing.xl,
+    marginRight: Spacing.sm,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+
+  // 明细项
+  detailItem: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    marginVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+
+  // 明细文本
+  detailText: {
+    fontSize: rf(12),
+    color: theme.textSecondary,
+  },
+
+  // 操作按钮
+  actionBar: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.md,
+    backgroundColor: theme.backgroundDefault,
+    borderTopWidth: 1,
+    borderTopColor: theme.borderLight,
+    gap: Spacing.sm,
+  },
+
+  clearBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    backgroundColor: theme.backgroundTertiary,
+    borderRadius: BorderRadius.lg,
+  },
+
+  clearBtnText: {
+    fontSize: rf(16),
+    fontWeight: '600',
+    color: theme.textSecondary,
+  },
+
+  submitBtn: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    backgroundColor: theme.primary,
+    borderRadius: BorderRadius.lg,
+  },
+
+  submitBtnText: {
+    fontSize: rf(16),
+    fontWeight: '600',
+    color: theme.buttonPrimaryText,
+  },
+
+  // 仓库选择器
+  pickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+
+  pickerBox: {
+    width: '80%',
+    maxHeight: '60%',
+    backgroundColor: theme.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+  },
+
+  pickerTitle: {
+    fontSize: rf(16),
+    fontWeight: '700',
+    color: theme.textPrimary,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+
+  pickerItemActive: {
+    backgroundColor: withAlpha(theme.primary, 0.1),
+  },
+
+  pickerItemText: {
+    fontSize: rf(14),
+    color: theme.textPrimary,
+  },
+
+  pickerClose: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.borderLight,
+  },
+
+  pickerCloseText: {
+    fontSize: rf(14),
+    color: theme.textSecondary,
+  },
+});
