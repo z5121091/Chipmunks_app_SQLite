@@ -823,6 +823,15 @@ export default function InboundScreen() {
     });
   }, [scanRecords]);
 
+  // 数据变化时自动保存到 AsyncStorage（实现持久化）
+  useEffect(() => {
+    // 当有扫描记录时自动保存
+    if (scanRecords.length > 0) {
+      saveScanRecords(scanRecords, currentSupplier);
+      console.log('[入库] 数据变化，自动保存记录:', scanRecords.length);
+    }
+  }, [scanRecords, currentSupplier, currentWarehouse]);
+
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <View style={styles.container}>
