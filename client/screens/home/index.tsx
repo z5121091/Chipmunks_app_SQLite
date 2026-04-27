@@ -19,7 +19,6 @@ import { WarehouseGuide, shouldShowWarehouseGuide, markWarehouseGuideShown } fro
 interface Module {
   id: string;
   name: string;
-  description: string;
   icon: keyof typeof Feather.glyphMap;
   color: string;
   route: string;
@@ -54,22 +53,11 @@ const HomeModuleCard = React.memo<{
           <Feather name={module.icon} size={iconSize} color={module.color} />
         </View>
 
-        <View style={isPrimary ? styles.primaryTextGroup : styles.secondaryTextGroup}>
-          <Text style={isPrimary ? styles.primaryTitle : styles.secondaryTitle} numberOfLines={1}>
-            {module.name}
-          </Text>
-          <Text
-            style={isPrimary ? styles.primaryDescription : styles.secondaryDescription}
-            numberOfLines={isPrimary ? 2 : 1}
-          >
-            {module.description}
-          </Text>
-        </View>
+        <Text style={isPrimary ? styles.primaryTitle : styles.secondaryTitle} numberOfLines={1}>
+          {module.name}
+        </Text>
 
         <View style={isPrimary ? styles.primaryFooter : styles.secondaryFooter}>
-          <Text style={[isPrimary ? styles.primaryFooterText : styles.secondaryFooterText, { color: module.color }]}>
-            {isPrimary ? '立即开始' : '进入模块'}
-          </Text>
           <Feather name="arrow-up-right" size={isPrimary ? 16 : 14} color={module.color} />
         </View>
 
@@ -146,7 +134,6 @@ export default function HomeScreen() {
     {
       id: 'inbound',
       name: Str.moduleInbound,
-      description: '扫码入库、恢复草稿、快速确认',
       icon: 'archive',
       color: moduleColors[0],
       route: '/inbound',
@@ -155,7 +142,6 @@ export default function HomeScreen() {
     {
       id: 'outbound',
       name: Str.moduleOutbound,
-      description: '按订单出库，适合连续高频扫描',
       icon: 'send',
       color: moduleColors[1],
       route: '/outbound',
@@ -164,7 +150,6 @@ export default function HomeScreen() {
     {
       id: 'orders',
       name: Str.moduleOrders,
-      description: '查询订单与物料明细',
       icon: 'file-text',
       color: moduleColors[2],
       route: '/orders',
@@ -173,7 +158,6 @@ export default function HomeScreen() {
     {
       id: 'inventory',
       name: Str.moduleInventory,
-      description: '盘点差异与数量复核',
       icon: 'clipboard',
       color: moduleColors[3],
       route: '/inventory',
@@ -182,7 +166,6 @@ export default function HomeScreen() {
     {
       id: 'material',
       name: Str.moduleMaterials,
-      description: '库存绑定与物料维护',
       icon: 'link',
       color: moduleColors[4],
       route: '/inventory-binding',
@@ -191,7 +174,6 @@ export default function HomeScreen() {
     {
       id: 'settings',
       name: Str.moduleSettings,
-      description: '同步、规则与基础配置',
       icon: 'settings',
       color: moduleColors[5],
       route: '/settings',
@@ -232,10 +214,12 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
+            <Text style={styles.heroEyebrow}>仓库作业台</Text>
             <Text style={styles.heroTitle}>掌上仓库</Text>
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionLabel}>高频操作</Text>
             <View style={styles.primaryGrid}>
               {primaryModules.map(renderPrimaryCard)}
             </View>

@@ -1280,6 +1280,128 @@ export default function OrdersScreen() {
     }
   };
   
+  const renderOrderItem = useCallback(({ item: order }: { item: Order }) => (
+    <View>
+      <AnimatedCard
+        onPress={() => handleToggleOrder(order)}
+        onLongPress={() => handleDeleteOrder(order)}
+      >
+        <View style={[
+          styles.orderItem,
+          expandedOrderId === order.id && styles.orderItemExpanded,
+        ]}>
+          <View style={styles.orderHeader}>
+            <View style={styles.orderHeaderLeft}>
+              <Feather
+                name={expandedOrderId === order.id ? 'chevron-down' : 'chevron-right'}
+                size={18}
+                color={theme.textSecondary}
+              />
+              <Text style={styles.orderNo} numberOfLines={1} ellipsizeMode="tail">
+                {order.order_no}
+              </Text>
+            </View>
+            <Text style={styles.orderDate}>
+              {formatDate(order.created_at)}
+            </Text>
+          </View>
+
+          <View style={styles.orderContent}>
+            <View style={styles.orderInfo}>
+              {order.customer_name ? (
+                <Text style={styles.customerName} numberOfLines={1}>
+                  {order.customer_name}
+                </Text>
+              ) : (
+                <Text style={styles.noCustomer} numberOfLines={1}>点击设置客户名称</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.editBtn}
+              activeOpacity={0.7}
+              onPress={() => handleEditCustomer(order)}
+            >
+              <Feather
+                name={order.customer_name ? 'edit-2' : 'plus'}
+                size={16}
+                color={theme.primary}
+              />
+              <Text style={styles.editBtnText}>
+                {order.customer_name ? '编辑' : '设置'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </AnimatedCard>
+
+      {expandedOrderId === order.id && (
+        <View style={styles.materialsList}>
+          {expandedMaterials.length === 0 ? (
+            <View style={styles.noMaterials}>
+              <Text style={styles.noMaterialsText}>该订单暂无物料记录</Text>
+            </View>
+          ) : (
+            expandedMaterials.map((material) => (
+              <View key={material.id} style={styles.materialItem}>
+                <TouchableOpacity
+                  style={styles.materialMainInfo}
+                  activeOpacity={0.7}
+                  onPress={() => handleViewMaterial(material)}
+                  onLongPress={() => handleDeleteMaterial(material)}
+                >
+                  <Text style={styles.materialModel} numberOfLines={1}>{material.model || '未知型号'}</Text>
+                  <Text style={styles.materialDetails}>批次: {material.batch || '-'}</Text>
+                  <Text style={styles.materialDetails}>
+                    数量: {material.quantity || 0}
+                  </Text>
+                  <Text style={styles.materialDate}>
+                    {formatDate(material.scanned_at)}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                  <TouchableOpacity
+                    style={[styles.unpackBtn, { backgroundColor: theme.backgroundTertiary }]}
+                    activeOpacity={0.7}
+                    onPress={() => handleOpenEditMaterial(material)}
+                  >
+                    <Feather name="edit-2" size={14} color={theme.textPrimary} />
+                    <Text style={[styles.unpackBtnText, { color: theme.textPrimary }]}>编辑</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.unpackBtn}
+                    activeOpacity={0.7}
+                    onPress={() => handleOpenUnpack(material)}
+                  >
+                    <Feather name="scissors" size={14} color={theme.primary} />
+                    <Text style={styles.unpackBtnText}>拆包</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+      )}
+    </View>
+  ), [
+    expandedMaterials,
+    expandedOrderId,
+    handleDeleteMaterial,
+    handleDeleteOrder,
+    handleEditCustomer,
+    handleOpenEditMaterial,
+    handleOpenUnpack,
+    handleToggleOrder,
+    handleViewMaterial,
+    styles,
+    theme.backgroundTertiary,
+    theme.primary,
+    theme.textPrimary,
+    theme.textSecondary,
+  ]);
+
   const renderAllOrdersModalItem = useCallback(({ item }: { item: Order }) => (
     <TouchableOpacity
       style={styles.orderListItem}
@@ -1385,10 +1507,7 @@ export default function OrdersScreen() {
 
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
-      <ScrollView 
-        style={styles.container}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
-      >
+      <View style={styles.container}>
         {/* 头部 */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
@@ -1589,121 +1708,35 @@ export default function OrdersScreen() {
             </View>
           </View>
           
-          {filteredOrders.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Feather name="file-text" size={48} color={theme.textMuted} />
-              <Text style={styles.emptyText}>
-                {searchText ? '未找到匹配的订单' : '暂无订单'}
-              </Text>
-              <Text style={styles.emptyTip}>
-                {searchText ? '请尝试其他关键词' : '扫码时会自动创建订单'}
-              </Text>
-            </View>
-          ) : (
-            filteredOrders.map((order) => (
-              <View key={order.id}>
-                {/* 订单卡片 */}
-                <AnimatedCard
-                  onPress={() => handleToggleOrder(order)}
-                  onLongPress={() => handleDeleteOrder(order)}
-                >
-                  <View style={[
-                    styles.orderItem,
-                    expandedOrderId === order.id && styles.orderItemExpanded
-                  ]}>
-                    <View style={styles.orderHeader}>
-                      <View style={styles.orderHeaderLeft}>
-                        <Feather 
-                          name={expandedOrderId === order.id ? "chevron-down" : "chevron-right"} 
-                          size={18} 
-                          color={theme.textSecondary} 
-                        />
-                        <Text style={styles.orderNo} numberOfLines={1} ellipsizeMode="tail">{order.order_no}</Text>
-                      </View>
-                      <Text style={styles.orderDate}>
-                        {formatDate(order.created_at)}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.orderContent}>
-                      <View style={styles.orderInfo}>
-                        {order.customer_name ? (
-                          <Text style={styles.customerName} numberOfLines={1}>
-                            {order.customer_name}
-                          </Text>
-                        ) : (
-                          <Text style={styles.noCustomer} numberOfLines={1}>点击设置客户名称</Text>
-                        )}
-                      </View>
-                      
-                      <TouchableOpacity style={styles.editBtn}
-                        activeOpacity={0.7} onPress={() => handleEditCustomer(order)}
-                      >
-                        <Feather 
-                          name={order.customer_name ? "edit-2" : "plus"} 
-                          size={16} 
-                          color={theme.primary} 
-                        />
-                        <Text style={styles.editBtnText}>
-                          {order.customer_name ? '编辑' : '设置'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </AnimatedCard>
-                
-                {/* 展开的物料列表 */}
-                {expandedOrderId === order.id && (
-                  <View style={styles.materialsList}>
-                    {expandedMaterials.length === 0 ? (
-                      <View style={styles.noMaterials}>
-                        <Text style={styles.noMaterialsText}>该订单暂无物料记录</Text>
-                      </View>
-                    ) : (
-                      expandedMaterials.map((material) => (
-                        <View key={material.id} style={styles.materialItem}>
-                          <TouchableOpacity style={styles.materialMainInfo}
-                            activeOpacity={0.7} onPress={() => handleViewMaterial(material)}
-                            onLongPress={() => handleDeleteMaterial(material)}
-                          >
-                            <Text style={styles.materialModel} numberOfLines={1}>{material.model || '未知型号'}</Text>
-                            <Text style={styles.materialDetails}>批次: {material.batch || '-'}</Text>
-                            <Text style={styles.materialDetails}>
-                              数量: {material.quantity || 0}
-                            </Text>
-                            <Text style={styles.materialDate}>
-                              {formatDate(material.scanned_at)}
-                            </Text>
-                          </TouchableOpacity>
-                          
-                          {/* 操作按钮 */}
-                          <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                            {/* 编辑按钮 */}
-                            <TouchableOpacity style={[styles.unpackBtn, { backgroundColor: theme.backgroundTertiary }]}
-                              activeOpacity={0.7} onPress={() => handleOpenEditMaterial(material)}
-                            >
-                              <Feather name="edit-2" size={14} color={theme.textPrimary} />
-                              <Text style={[styles.unpackBtnText, { color: theme.textPrimary }]}>编辑</Text>
-                            </TouchableOpacity>
-                            
-                            {/* 拆包按钮 */}
-                            <TouchableOpacity style={styles.unpackBtn}
-                              activeOpacity={0.7} onPress={() => handleOpenUnpack(material)}
-                            >
-                              <Feather name="scissors" size={14} color={theme.primary} />
-                              <Text style={styles.unpackBtnText}>拆包</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))
-                    )}
-                  </View>
-                )}
+          <FlatList
+            data={filteredOrders}
+            keyExtractor={(item) => item.id}
+            renderItem={renderOrderItem}
+            extraData={`${expandedOrderId}-${expandedMaterials.length}`}
+            style={styles.ordersList}
+            contentContainerStyle={[
+              styles.ordersListContent,
+              { paddingBottom: insets.bottom + 100 },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={10}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Feather name="file-text" size={48} color={theme.textMuted} />
+                <Text style={styles.emptyText}>
+                  {searchText ? '未找到匹配的订单' : '暂无订单'}
+                </Text>
+                <Text style={styles.emptyTip}>
+                  {searchText ? '请尝试其他关键词' : '扫码时会自动创建订单'}
+                </Text>
               </View>
-            ))
-          )}
+            }
+          />
         </View>
-      </ScrollView>
+      </View>
       
       {/* 编辑客户名称弹窗 */}
       <Modal
@@ -1770,64 +1803,22 @@ export default function OrdersScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={{ maxHeight: 400 }}>
-              {(() => {
-                // 使用订单号日期进行时间筛选
-                const today = getTodayLocal();
-                
-                // 使用 filteredOrders，保持与仓库筛选一致
-                let displayOrders = filteredOrders;
-                
-                // 根据 timeFilter 筛选订单（使用订单号日期）
-                if (timeFilter === 'today') {
-                  displayOrders = displayOrders.filter(o => extractDateFromOrderNo(o.order_no) === today);
-                } else if (timeFilter === 'threeDays') {
-                  // 近三天：包含今天
-                  displayOrders = displayOrders.filter(o => {
-                    const orderDate = extractDateFromOrderNo(o.order_no);
-                    const diff = getDaysDiff(orderDate, today);
-                    return diff >= -2;
-                  });
-                } else if (timeFilter === 'sevenDays') {
-                  // 近七天：包含今天
-                  displayOrders = displayOrders.filter(o => {
-                    const orderDate = extractDateFromOrderNo(o.order_no);
-                    const diff = getDaysDiff(orderDate, today);
-                    return diff >= -7;
-                  });
-                }
-                
-                if (displayOrders.length === 0) {
-                  return (
-                    <Text style={{ textAlign: 'center', color: theme.textMuted, paddingVertical: Spacing.xl }}>
-                      暂无订单
-                    </Text>
-                  );
-                }
-                
-                return displayOrders.map((order, index) => (
-                  <TouchableOpacity key={order.id}
-                    style={[styles.orderListItem, index === displayOrders.length - 1 && styles.orderListItemLast]}
-                    activeOpacity={0.7} onPress={() => {
-                      // 关闭弹窗
-                      setAllOrdersModalVisible(false);
-                      // 展开该订单
-                      handleToggleOrder(order);
-                    }}
-                  >
-                    <View>
-                      <Text style={styles.orderListItemNo}>{order.order_no}</Text>
-                      <Text style={styles.orderListItemInfo}>
-                        {order.customer_name || '未设置客户'}
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: rf(12), color: theme.textMuted }}>
-                      {formatDate(order.created_at)}
-                    </Text>
-                  </TouchableOpacity>
-                ));
-              })()}
-            </ScrollView>
+            <FlatList
+              data={filteredOrders}
+              keyExtractor={(item) => item.id}
+              renderItem={renderAllOrdersModalItem}
+              style={{ maxHeight: 400 }}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={12}
+              maxToRenderPerBatch={16}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              ListEmptyComponent={
+                <Text style={{ textAlign: 'center', color: theme.textMuted, paddingVertical: Spacing.xl }}>
+                  暂无订单
+                </Text>
+              }
+            />
             
             <TouchableOpacity style={styles.modalCloseButton}
               activeOpacity={0.7} onPress={() => setAllOrdersModalVisible(false)}
@@ -1861,55 +1852,22 @@ export default function OrdersScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={{ maxHeight: 450 }}>
-              {materialSummaries.length === 0 ? (
+            <FlatList
+              data={materialSummaries}
+              keyExtractor={(item) => item.model}
+              renderItem={renderMaterialSummaryItem}
+              style={{ maxHeight: 450 }}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={12}
+              maxToRenderPerBatch={16}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              ListEmptyComponent={
                 <Text style={{ textAlign: 'center', color: theme.textMuted, paddingVertical: Spacing.xl }}>
                   暂无物料数据
                 </Text>
-              ) : (
-                materialSummaries.map((summary, index) => (
-                  <TouchableOpacity key={index}
-                    style={{
-                      backgroundColor: theme.backgroundTertiary,
-                      borderRadius: BorderRadius.lg,
-                      padding: Spacing.md,
-                      marginBottom: Spacing.sm,
-                    }}
-                    activeOpacity={0.7} onPress={() => handleOpenMaterialDetail(summary.model)}
-                  >
-                    <View style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: Spacing.xs,
-                    }}>
-                      <Text style={{ fontSize: rf(16), fontWeight: '700', color: theme.textPrimary, flex: 1 }} numberOfLines={1}>
-                        {summary.model}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Feather name="chevron-right" size={16} color={theme.textMuted} />
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: Spacing.lg }}>
-                      <View>
-                        <Text style={{ fontSize: rf(11), color: theme.textMuted }}>扫码次数</Text>
-                        <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }}>{summary.count} 次</Text>
-                      </View>
-                      <View>
-                        <Text style={{ fontSize: rf(11), color: theme.textMuted }}>总数量</Text>
-                        <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.primary }}>{summary.totalQuantity.toLocaleString()}</Text>
-                      </View>
-                      {summary.todayCount > 0 && (
-                        <View>
-                          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>今日</Text>
-                          <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.accent }}>{summary.todayCount}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
+              }
+            />
             
             <TouchableOpacity style={styles.modalCloseButton}
               activeOpacity={0.7} onPress={() => setMaterialsModalVisible(false)}
@@ -1941,51 +1899,22 @@ export default function OrdersScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={{ maxHeight: 450 }}>
-              {selectedModelMaterials.length === 0 ? (
+            <FlatList
+              data={selectedModelMaterials}
+              keyExtractor={(item, index) => String(item.id || index)}
+              renderItem={renderSelectedModelMaterialItem}
+              style={{ maxHeight: 450 }}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={12}
+              maxToRenderPerBatch={16}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              ListEmptyComponent={
                 <Text style={{ textAlign: 'center', color: theme.textMuted, paddingVertical: Spacing.xl }}>
                   暂无数据
                 </Text>
-              ) : (
-                selectedModelMaterials.map((material, index) => (
-                  <TouchableOpacity key={material.id || index}
-                    style={{
-                      backgroundColor: theme.backgroundTertiary,
-                      borderRadius: BorderRadius.lg,
-                      padding: Spacing.md,
-                      marginBottom: Spacing.sm,
-                    }}
-                    activeOpacity={0.7} onPress={() => {
-                      setMaterialDetailModalVisible(false);
-                      router.push('/detail', { id: material.id });
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs }}>
-                      <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }}>
-                        {material.traceNo || '无追踪码'}
-                      </Text>
-                      <Text style={{ fontSize: rf(12), color: theme.textMuted }}>
-                        {formatDate(material.scanned_at)}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: Spacing.lg }}>
-                      <View>
-                        <Text style={{ fontSize: rf(11), color: theme.textMuted }}>数量</Text>
-                        <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }}>{material.quantity || 0}</Text>
-                      </View>
-                      <View>
-                        <Text style={{ fontSize: rf(11), color: theme.textMuted }}>批次</Text>
-                        <Text style={{ fontSize: rf(13), color: theme.textSecondary }}>{material.batch || '-'}</Text>
-                      </View>
-                      <View>
-                        <Text style={{ fontSize: rf(11), color: theme.textMuted }}>订单</Text>
-                        <Text style={{ fontSize: rf(13), color: theme.textSecondary }}>{material.order_no}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
+              }
+            />
             
             <TouchableOpacity style={styles.modalCloseButton}
               activeOpacity={0.7} onPress={() => setMaterialDetailModalVisible(false)}

@@ -7,10 +7,10 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
   const primaryGap = isSmallScreen ? 10 : 14;
   const secondaryGap = isSmallScreen ? 10 : 14;
   const secondaryCardWidth = (screenWidth - horizontalPadding * 2 - secondaryGap) / 2;
-  const primaryCardHeight = Math.max(150, Math.min(screenHeight * 0.22, 188));
-  const secondaryCardHeight = Math.max(116, Math.min(screenHeight * 0.16, 142));
-  const primaryIconSize = isSmallScreen ? 56 : 64;
-  const secondaryIconSize = isSmallScreen ? 42 : 46;
+  const primaryCardHeight = Math.max(132, Math.min(screenHeight * 0.18, 164));
+  const secondaryCardHeight = Math.max(88, Math.min(screenHeight * 0.12, 112));
+  const primaryIconSize = isSmallScreen ? 52 : 58;
+  const secondaryIconSize = isSmallScreen ? 36 : 40;
 
   return StyleSheet.create({
     container: {
@@ -25,7 +25,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     },
 
     hero: {
-      marginBottom: Spacing.lg,
+      marginBottom: Spacing.md,
     },
 
     heroEyebrow: {
@@ -37,36 +37,6 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     heroTitle: {
       ...Typography.h2,
       color: theme.textPrimary,
-    },
-
-    heroSubtitle: {
-      ...Typography.body,
-      color: theme.textSecondary,
-      marginTop: Spacing.xs,
-    },
-
-    badgeRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: Spacing.xs,
-      marginTop: Spacing.md,
-    },
-
-    badge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: BorderRadius.full,
-      backgroundColor: theme.backgroundDefault,
-      borderWidth: BorderWidth.normal,
-      borderColor: theme.border,
-    },
-
-    badgeText: {
-      ...Typography.captionMedium,
-      color: theme.textSecondary,
     },
 
     section: {
@@ -87,7 +57,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     primaryCard: {
       flex: 1,
       minHeight: primaryCardHeight,
-      borderRadius: BorderRadius.xl,
+      borderRadius: BorderRadius.lg,
       borderWidth: 2,
       backgroundColor: theme.backgroundDefault,
       overflow: 'hidden',
@@ -107,18 +77,9 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       marginBottom: Spacing.md,
     },
 
-    primaryTextGroup: {
-      gap: 4,
-    },
-
     primaryTitle: {
-      ...Typography.title,
+      ...Typography.h4,
       color: theme.textPrimary,
-    },
-
-    primaryDescription: {
-      ...Typography.small,
-      color: theme.textSecondary,
     },
 
     primaryFooter: {
@@ -126,10 +87,6 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-    },
-
-    primaryFooterText: {
-      ...Typography.captionMedium,
     },
 
     primaryAccent: {
@@ -150,7 +107,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     secondaryCard: {
       width: secondaryCardWidth,
       minHeight: secondaryCardHeight,
-      borderRadius: BorderRadius.lg,
+      borderRadius: BorderRadius.md,
       borderWidth: BorderWidth.normal,
       borderColor: theme.border,
       backgroundColor: theme.backgroundDefault,
@@ -159,6 +116,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     secondaryCardInner: {
       flex: 1,
       padding: Spacing.sm,
+      justifyContent: 'space-between',
     },
 
     secondaryIconContainer: {
@@ -170,18 +128,9 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       marginBottom: Spacing.sm,
     },
 
-    secondaryTextGroup: {
-      gap: 2,
-    },
-
     secondaryTitle: {
       ...Typography.smallMedium,
       color: theme.textPrimary,
-    },
-
-    secondaryDescription: {
-      ...Typography.caption,
-      color: theme.textSecondary,
     },
 
     secondaryFooter: {
@@ -191,8 +140,5 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       gap: 4,
     },
 
-    secondaryFooterText: {
-      ...Typography.captionMedium,
-    },
   });
 };

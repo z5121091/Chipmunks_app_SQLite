@@ -8,6 +8,7 @@ export const createStyles = (theme: Theme) => {
     container: {
       flex: 1,
       backgroundColor: theme.backgroundRoot,
+      padding: Spacing.sm,
     },
     scrollContent: {
       padding: Spacing.sm,
@@ -168,6 +169,13 @@ export const createStyles = (theme: Theme) => {
     // 订单列表
     recentOrders: {
       marginTop: Spacing.xs,
+      flex: 1,
+    },
+    ordersList: {
+      flex: 1,
+    },
+    ordersListContent: {
+      paddingBottom: Spacing.md,
     },
     sectionHeader: {
       flexDirection: 'row',
