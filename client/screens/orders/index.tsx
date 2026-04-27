@@ -599,60 +599,13 @@ export default function OrdersScreen() {
   }, [calculateStats, currentWarehouse?.id, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
   
   // 搜索过滤
-  const handleSearch = useCallback(async (text: string) => {
+  const handleSearchInput = useCallback((text: string) => {
     setSearchText(text);
-    if (!text.trim()) {
-      // 无搜索文本时，显示当前筛选结果
-      const filtered = filterOrdersByWarehouseAndTime(orders);
-      setFilteredOrders(filtered);
-      return;
-    }
-    
-    const lowerText = text.toLowerCase();
-    
-    if (searchType === 'batch') {
-      // 按批次搜索物料，然后找到相关订单
-      try {
-        const materials = await searchMaterials({
-          batch: text,
-          warehouse_id: currentWarehouse?.id,
-        });
-        const orderNos = new Set(materials.map(m => m.order_no));
-        const filtered = filterOrdersByWarehouseAndTime(orders).filter(order => orderNos.has(order.order_no));
-        setFilteredOrders(filtered.sort((a, b) =>
-          b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-        ));
-      } catch (error) {
-        console.error('批次搜索失败:', error);
-        setFilteredOrders([]);
-      }
-    } else if (searchType === 'customer') {
-      // 按客户名称搜索
-      const filtered = filterOrdersByWarehouseAndTime(orders).filter(order => 
-        order.customer_name && order.customer_name.toLowerCase().includes(lowerText)
-      );
-      setFilteredOrders(filtered.sort((a, b) => 
-        b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-      ));
-    } else {
-      // 按订单号搜索
-      const filtered = filterOrdersByWarehouseAndTime(orders).filter(order => 
-        order.order_no.toLowerCase().includes(lowerText)
-      );
-      setFilteredOrders(filtered.sort((a, b) => 
-        b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-      ));
-    }
-  }, [orders, searchType, currentWarehouse, filterOrdersByWarehouseAndTime]);
+  }, []);
   
   // 搜索类型变更时重新搜索
   const handleSearchTypeChange = useCallback((type: SearchType) => {
     setSearchType(type);
-  }, []);
-
-  // 使用 ref 存储 loadData 函数的最新引用，避免 useFocusEffect 依赖变化导致无限循环
-  const handleSearchInput = useCallback((text: string) => {
-    setSearchText(text);
   }, []);
 
   useEffect(() => {
@@ -754,93 +707,9 @@ export default function OrdersScreen() {
     setExpandedMaterials([]);
   }, [calculateStats, currentWarehouse, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
   
-  // 处理时间筛选切换（BUG 4 修复：使用临时筛选函数避免闭包问题）
-  const handleTimeFilterChange = useCallback(async (filter: TimeFilterType) => {
-    // 先更新状态
+  const handleTimeFilterChange = useCallback((filter: TimeFilterType) => {
     setTimeFilter(filter);
-    
-    // 使用传入的 filter 参数直接筛选，避免闭包问题
-    // 同时考虑搜索状态
-    const getFilteredOrders = (allOrders: Order[], warehouse: Warehouse | null, timeFilterVal: TimeFilterType): Order[] => {
-      let filtered = allOrders;
-
-      // 按仓库筛选（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
-      if (warehouse) {
-        filtered = filtered.filter(o => o.warehouse_id === warehouse.id);
-      }
-      
-      // 按时间筛选（使用订单号日期判断）
-      if (timeFilterVal !== 'all') {
-        const today = getTodayLocal();
-        if (timeFilterVal === 'today') {
-          // 今天：订单号日期 = 今天
-          filtered = filtered.filter(o => {
-            const orderDate = extractDateFromOrderNo(o.order_no);
-            return orderDate === today;
-          });
-        } else if (timeFilterVal === 'threeDays') {
-          // 近三天：订单号日期 = 今天 或 昨天(-1) 或 前天(-2)
-          filtered = filtered.filter(o => {
-            const orderDate = extractDateFromOrderNo(o.order_no);
-            const diff = getDaysDiff(orderDate, today);
-            return diff === 0 || diff === -1 || diff === -2;
-          });
-        } else if (timeFilterVal === 'sevenDays') {
-          // 近七天：订单号日期 = 今天到7天前
-          filtered = filtered.filter(o => {
-            const orderDate = extractDateFromOrderNo(o.order_no);
-            const diff = getDaysDiff(orderDate, today);
-            return diff >= -7;
-          });
-        }
-      }
-      
-      return filtered;
-    };
-    
-    // 如果有搜索词，保持搜索逻辑（BUG 6 修复）
-    if (searchText.trim()) {
-      // 根据搜索类型筛选
-      if (searchType === 'batch') {
-        // 按批次搜索（需要查询物料表）
-        try {
-          const materials = await searchMaterials({
-            batch: searchText,
-            warehouse_id: currentWarehouse?.id,
-          });
-          const orderNos = new Set(materials.map(m => m.order_no));
-          const searchFiltered = getFilteredOrders(orders, currentWarehouse, filter);
-          setFilteredOrders(searchFiltered.filter(order => orderNos.has(order.order_no)).sort((a, b) =>
-            b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-          ));
-        } catch (error) {
-          console.error('批次搜索失败:', error);
-          setFilteredOrders([]);
-        }
-      } else if (searchType === 'customer') {
-        const lowerText = searchText.toLowerCase();
-        const searchFiltered = getFilteredOrders(orders, currentWarehouse, filter);
-        setFilteredOrders(searchFiltered.filter(o => 
-          o.customer_name && o.customer_name.toLowerCase().includes(lowerText)
-        ).sort((a, b) => b.order_no.localeCompare(a.order_no, undefined, { numeric: true })));
-      } else {
-        const lowerText = searchText.toLowerCase();
-        const searchFiltered = getFilteredOrders(orders, currentWarehouse, filter);
-        setFilteredOrders(searchFiltered.filter(o => 
-          o.order_no.toLowerCase().includes(lowerText)
-        ).sort((a, b) => b.order_no.localeCompare(a.order_no, undefined, { numeric: true })));
-      }
-    } else {
-      // 无搜索词，直接筛选
-      const filtered = getFilteredOrders(orders, currentWarehouse, filter);
-      setFilteredOrders(filtered);
-    }
-    
-    // 重新计算统计数据
-    const materialsData = await getAllMaterials(currentWarehouse?.id);
-    const statsData = await calculateStats(orders, materialsData);
-    setStats(statsData);
-  }, [orders, currentWarehouse, searchText, searchType, calculateStats]);
+  }, []);
   
   // 处理从扫描页面跳转过来的参数（自动展开订单）
   useEffect(() => {
@@ -1617,7 +1486,7 @@ export default function OrdersScreen() {
           {/* 第二行：时间筛选 Tab */}
           <View style={styles.filterRow}>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'today' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => setTimeFilter('today')}
+              activeOpacity={0.7} onPress={() => handleTimeFilterChange('today')}
             >
               <FontAwesome6 
                 name="calendar-day" 
@@ -1630,7 +1499,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'threeDays' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => setTimeFilter('threeDays')}
+              activeOpacity={0.7} onPress={() => handleTimeFilterChange('threeDays')}
             >
               <FontAwesome6 
                 name="calendar-week" 
@@ -1643,7 +1512,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'sevenDays' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => setTimeFilter('sevenDays')}
+              activeOpacity={0.7} onPress={() => handleTimeFilterChange('sevenDays')}
             >
               <FontAwesome6 
                 name="calendar-week" 
@@ -1656,7 +1525,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'all' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => setTimeFilter('all')}
+              activeOpacity={0.7} onPress={() => handleTimeFilterChange('all')}
             >
               <FontAwesome6 
                 name="calendar" 
