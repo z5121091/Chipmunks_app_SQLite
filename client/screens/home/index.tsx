@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -15,80 +16,100 @@ import { ModuleColors } from '@/constants/theme';
 import { Str } from '@/resources/strings';
 import { WarehouseGuide, shouldShowWarehouseGuide, markWarehouseGuideShown } from '@/components/WarehouseGuide';
 
-// 模块定义
 interface Module {
   id: string;
   name: string;
+  description: string;
   icon: keyof typeof Feather.glyphMap;
   color: string;
   route: string;
+  priority: 'primary' | 'secondary';
 }
 
-// 模块组件（性能优化版本 - 移除动画以提升低配设备性能）
-const ModuleCard = React.memo<{
+const HomeModuleCard = React.memo<{
   module: Module;
+  variant: 'primary' | 'secondary';
   styles: ReturnType<typeof createStyles>;
+  screenWidth: number;
   onPress: () => void;
-}>(({ module, styles, onPress }) => {
-  // 根据模块名称计算图标大小比例
-  const iconSizeMultiplier = module.name.length > 4 ? 0.42 : 0.5;
-  const iconSize = Math.floor(styles.moduleIconContainer.width * iconSizeMultiplier);
+}>(({ module, variant, styles, screenWidth, onPress }) => {
+  const isPrimary = variant === 'primary';
+  const iconSize = isPrimary
+    ? (screenWidth <= 410 ? 28 : 32)
+    : (screenWidth <= 410 ? 20 : 24);
 
   return (
     <TouchableOpacity
-      style={styles.moduleCard}
-      activeOpacity={0.7}  // 使用 activeOpacity 提供点击反馈
+      style={isPrimary ? [styles.primaryCard, { borderColor: module.color }] : styles.secondaryCard}
+      activeOpacity={0.82}
       onPress={onPress}
     >
-      <View style={[styles.moduleCardInner]}>
-        <View style={[styles.moduleIconContainer, { backgroundColor: module.color + '18' }]}>
-          <Feather
-            name={module.icon}
-            size={iconSize}
-            color={module.color}
-          />
+      <View style={isPrimary ? styles.primaryCardInner : styles.secondaryCardInner}>
+        <View
+          style={[
+            isPrimary ? styles.primaryIconContainer : styles.secondaryIconContainer,
+            { backgroundColor: `${module.color}18` },
+          ]}
+        >
+          <Feather name={module.icon} size={iconSize} color={module.color} />
         </View>
-        <Text style={styles.moduleName} numberOfLines={1}>
-          {module.name}
-        </Text>
+
+        <View style={isPrimary ? styles.primaryTextGroup : styles.secondaryTextGroup}>
+          <Text style={isPrimary ? styles.primaryTitle : styles.secondaryTitle} numberOfLines={1}>
+            {module.name}
+          </Text>
+          <Text
+            style={isPrimary ? styles.primaryDescription : styles.secondaryDescription}
+            numberOfLines={isPrimary ? 2 : 1}
+          >
+            {module.description}
+          </Text>
+        </View>
+
+        <View style={isPrimary ? styles.primaryFooter : styles.secondaryFooter}>
+          <Text style={[isPrimary ? styles.primaryFooterText : styles.secondaryFooterText, { color: module.color }]}>
+            {isPrimary ? '立即开始' : '进入模块'}
+          </Text>
+          <Feather name="arrow-up-right" size={isPrimary ? 16 : 14} color={module.color} />
+        </View>
+
+        {isPrimary && <View style={[styles.primaryAccent, { backgroundColor: module.color }]} />}
       </View>
     </TouchableOpacity>
   );
-}, (prevProps, nextProps) => {
-  // 自定义比较函数，避免不必要的重新渲染
-  return (
-    prevProps.module.id === nextProps.module.id &&
-    prevProps.module.name === nextProps.module.name &&
-    prevProps.module.route === nextProps.module.route
-  );
-});
+}, (prevProps, nextProps) => (
+  prevProps.module.id === nextProps.module.id &&
+  prevProps.module.route === nextProps.module.route &&
+  prevProps.module.name === nextProps.module.name &&
+  prevProps.variant === nextProps.variant &&
+  prevProps.screenWidth === nextProps.screenWidth
+));
 
 export default function HomeScreen() {
   const { theme, isDark } = useTheme();
   const router = useSafeRouter();
-  const [screenHeight, setScreenHeight] = React.useState(Dimensions.get('window').height);
-  const [screenWidth, setScreenWidth] = React.useState(Dimensions.get('window').width);
-
-  // 仓库引导状态
+  const [screenHeight, setScreenHeight] = useState(Dimensions.get('window').height);
+  const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const [showWarehouseGuide, setShowWarehouseGuide] = useState(false);
 
-  // 监听屏幕尺寸变化
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setScreenHeight(window.height);
       setScreenWidth(window.width);
     });
+
     return () => subscription?.remove();
   }, []);
 
-  const styles = useMemo(() => createStyles(theme, screenWidth, screenHeight), [theme, screenHeight, screenWidth]);
+  const styles = useMemo(
+    () => createStyles(theme, screenWidth, screenHeight),
+    [theme, screenWidth, screenHeight]
+  );
 
-  // 初始化数据库
   useEffect(() => {
     initDatabase().catch(console.error);
   }, []);
 
-  // 检查是否需要显示仓库引导（仅在首次安装时）
   useEffect(() => {
     const checkWarehouseGuide = async () => {
       try {
@@ -101,10 +122,10 @@ export default function HomeScreen() {
         console.error('[首页] 检查仓库引导失败:', error);
       }
     };
+
     checkWarehouseGuide();
   }, []);
 
-  // 6种主题色（从统一配置读取）
   const moduleColors = theme.isDark ? [
     ModuleColors.dark.inbound,
     ModuleColors.dark.outbound,
@@ -121,72 +142,116 @@ export default function HomeScreen() {
     ModuleColors.light.settings,
   ];
 
-  // 功能模块列表
   const modules: Module[] = [
     {
       id: 'inbound',
       name: Str.moduleInbound,
+      description: '扫码入库、恢复草稿、快速确认',
       icon: 'archive',
       color: moduleColors[0],
       route: '/inbound',
+      priority: 'primary',
     },
     {
       id: 'outbound',
       name: Str.moduleOutbound,
+      description: '按订单出库，适合连续高频扫描',
       icon: 'send',
       color: moduleColors[1],
       route: '/outbound',
+      priority: 'primary',
     },
     {
       id: 'orders',
       name: Str.moduleOrders,
+      description: '查询订单与物料明细',
       icon: 'file-text',
       color: moduleColors[2],
       route: '/orders',
+      priority: 'secondary',
     },
     {
       id: 'inventory',
       name: Str.moduleInventory,
+      description: '盘点差异与数量复核',
       icon: 'clipboard',
       color: moduleColors[3],
       route: '/inventory',
+      priority: 'secondary',
     },
     {
       id: 'material',
       name: Str.moduleMaterials,
+      description: '库存绑定与物料维护',
       icon: 'link',
       color: moduleColors[4],
       route: '/inventory-binding',
+      priority: 'secondary',
     },
     {
       id: 'settings',
       name: Str.moduleSettings,
+      description: '同步、规则与基础配置',
       icon: 'settings',
       color: moduleColors[5],
       route: '/settings',
+      priority: 'secondary',
     },
   ];
 
-  // 渲染模块卡片
-  const renderModuleCard = useCallback((module: Module) => (
-    <ModuleCard
+  const primaryModules = modules.filter((module) => module.priority === 'primary');
+  const secondaryModules = modules.filter((module) => module.priority === 'secondary');
+
+  const renderPrimaryCard = useCallback((module: Module) => (
+    <HomeModuleCard
       key={module.id}
       module={module}
+      variant="primary"
       styles={styles}
+      screenWidth={screenWidth}
       onPress={() => router.push(module.route as any)}
     />
-  ), [styles, router]);
+  ), [router, screenWidth, styles]);
+
+  const renderSecondaryCard = useCallback((module: Module) => (
+    <HomeModuleCard
+      key={module.id}
+      module={module}
+      variant="secondary"
+      styles={styles}
+      screenWidth={screenWidth}
+      onPress={() => router.push(module.route as any)}
+    />
+  ), [router, screenWidth, styles]);
 
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <View style={styles.container}>
-        {/* 功能模块区域 - 自适应撑满全屏 */}
-        <View style={styles.modulesGrid}>
-          {modules.map(renderModuleCard)}
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.hero}>
+            <Text style={styles.heroEyebrow}>仓库作业台</Text>
+            <Text style={styles.heroTitle}>掌上仓库</Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>高频操作</Text>
+            <View style={styles.primaryGrid}>
+              {primaryModules.map(renderPrimaryCard)}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>辅助功能</Text>
+            <View style={styles.secondaryGrid}>
+              {secondaryModules.map(renderSecondaryCard)}
+            </View>
+          </View>
+        </ScrollView>
       </View>
 
-      {/* 仓库引导（仅在首次安装时显示） */}
       <WarehouseGuide
         visible={showWarehouseGuide}
         onSkip={() => {

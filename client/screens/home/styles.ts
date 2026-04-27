@@ -1,100 +1,198 @@
-import { StyleSheet, Dimensions } from 'react-native';
-import { Spacing, BorderRadius, Theme } from '@/constants/theme';
-import { rf } from '@/utils/responsive';
-import { withAlpha } from '@/utils/colors';
+import { StyleSheet } from 'react-native';
+import { BorderRadius, BorderWidth, Spacing, Theme, Typography } from '@/constants/theme';
 
 export const createStyles = (theme: Theme, screenWidth: number, screenHeight: number) => {
-  // 屏幕尺寸
-  const screenH = screenHeight;
-  const screenW = screenWidth;
-
-  // 判断是否为小屏幕PDA（400×800等4寸屏）
-  const isSmallScreen = screenW <= 410;
-
-  // 布局配置 - 根据屏幕大小自适应，最大化利用屏幕空间
-  const marginHorizontal = isSmallScreen ? 8 : 12;  // 减少左右留白
-  const marginTop = isSmallScreen ? 12 : 16;        // 减少顶部留白
-  const marginBottom = isSmallScreen ? 8 : 12;      // 减少底部留白
-
-  // 可用尺寸
-  const availableWidth = screenW - marginHorizontal * 2;
-  const availableHeight = screenH - marginTop - marginBottom;
-
-  // 3行2列布局
-  const cols = 2;
-  const rows = 3;
-
-  // 统一间距 - 减少间距以充分利用屏幕
-  const gap = isSmallScreen ? 8 : 12;
-
-  // 计算每个模块的尺寸（均匀分布）
-  const moduleWidth = (availableWidth - gap * (cols - 1)) / cols;
-  const moduleHeight = (availableHeight - gap * (rows - 1)) / rows;
-
-  // 图标容器尺寸（占模块宽度的50%，居中显示）
-  const iconContainerSize = Math.min(moduleWidth * 0.5, moduleHeight * 0.45);
-  const iconSize = Math.floor(iconContainerSize * (isSmallScreen ? 0.42 : 0.45));
-
-  // 文字大小 - 小屏幕适当缩小
-  const titleSize = isSmallScreen
-    ? Math.max(14, Math.min(moduleWidth * 0.11, 18))
-    : Math.max(18, Math.min(moduleWidth * 0.11, 22));
+  const isSmallScreen = screenWidth <= 410;
+  const horizontalPadding = isSmallScreen ? 12 : 16;
+  const primaryGap = isSmallScreen ? 10 : 14;
+  const secondaryGap = isSmallScreen ? 10 : 14;
+  const secondaryCardWidth = (screenWidth - horizontalPadding * 2 - secondaryGap) / 2;
+  const primaryCardHeight = Math.max(150, Math.min(screenHeight * 0.22, 188));
+  const secondaryCardHeight = Math.max(116, Math.min(screenHeight * 0.16, 142));
+  const primaryIconSize = isSmallScreen ? 56 : 64;
+  const secondaryIconSize = isSmallScreen ? 42 : 46;
 
   return StyleSheet.create({
     container: {
       flex: 1,
-      marginHorizontal: marginHorizontal,
-      marginTop: marginTop,
-      marginBottom: marginBottom,
       backgroundColor: theme.backgroundRoot,
     },
 
-    // 模块网格区域
-    modulesGrid: {
-      flex: 1,
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
-      alignContent: 'flex-start',
+    content: {
+      paddingHorizontal: horizontalPadding,
+      paddingTop: isSmallScreen ? 14 : 18,
+      paddingBottom: 24,
     },
 
-    // 模块卡片 - 极简设计，有边框区分
-    moduleCard: {
-      width: moduleWidth,
-      height: moduleHeight,
+    hero: {
+      marginBottom: Spacing.lg,
+    },
+
+    heroEyebrow: {
+      ...Typography.labelSmall,
+      color: theme.textMuted,
+      marginBottom: Spacing.xs,
+    },
+
+    heroTitle: {
+      ...Typography.h2,
+      color: theme.textPrimary,
+    },
+
+    heroSubtitle: {
+      ...Typography.body,
+      color: theme.textSecondary,
+      marginTop: Spacing.xs,
+    },
+
+    badgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.xs,
+      marginTop: Spacing.md,
+    },
+
+    badge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: BorderRadius.full,
       backgroundColor: theme.backgroundDefault,
-      borderRadius: BorderRadius.xl,
-      paddingHorizontal: Spacing.sm,
-      // 重边框区分模块
-      borderWidth: 2,
+      borderWidth: BorderWidth.normal,
       borderColor: theme.border,
     },
 
-    // 模块卡片内层（用于动画）
-    moduleCardInner: {
-      flex: 1,
-      width: '100%',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
+    badgeText: {
+      ...Typography.captionMedium,
+      color: theme.textSecondary,
     },
 
-    // 图标容器 - 彩色圆形背景
-    moduleIconContainer: {
-      width: iconContainerSize,
-      height: iconContainerSize,
-      borderRadius: iconContainerSize / 2,
+    section: {
+      marginBottom: Spacing.lg,
+    },
+
+    sectionLabel: {
+      ...Typography.captionMedium,
+      color: theme.textMuted,
+      marginBottom: Spacing.sm,
+    },
+
+    primaryGrid: {
+      flexDirection: 'row',
+      gap: primaryGap,
+    },
+
+    primaryCard: {
+      flex: 1,
+      minHeight: primaryCardHeight,
+      borderRadius: BorderRadius.xl,
+      borderWidth: 2,
+      backgroundColor: theme.backgroundDefault,
+      overflow: 'hidden',
+    },
+
+    primaryCardInner: {
+      flex: 1,
+      padding: Spacing.md,
+    },
+
+    primaryIconContainer: {
+      width: primaryIconSize,
+      height: primaryIconSize,
+      borderRadius: primaryIconSize / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: Spacing.md,
+    },
+
+    primaryTextGroup: {
+      gap: 4,
+    },
+
+    primaryTitle: {
+      ...Typography.title,
+      color: theme.textPrimary,
+    },
+
+    primaryDescription: {
+      ...Typography.small,
+      color: theme.textSecondary,
+    },
+
+    primaryFooter: {
+      marginTop: 'auto',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+
+    primaryFooterText: {
+      ...Typography.captionMedium,
+    },
+
+    primaryAccent: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 4,
+    },
+
+    secondaryGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      rowGap: secondaryGap,
+    },
+
+    secondaryCard: {
+      width: secondaryCardWidth,
+      minHeight: secondaryCardHeight,
+      borderRadius: BorderRadius.lg,
+      borderWidth: BorderWidth.normal,
+      borderColor: theme.border,
+      backgroundColor: theme.backgroundDefault,
+    },
+
+    secondaryCardInner: {
+      flex: 1,
+      padding: Spacing.sm,
+    },
+
+    secondaryIconContainer: {
+      width: secondaryIconSize,
+      height: secondaryIconSize,
+      borderRadius: BorderRadius.md,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: Spacing.sm,
     },
 
-    // 模块标题
-    moduleName: {
-      fontSize: titleSize,
-      fontWeight: '700',
+    secondaryTextGroup: {
+      gap: 2,
+    },
+
+    secondaryTitle: {
+      ...Typography.smallMedium,
       color: theme.textPrimary,
-      textAlign: 'center',
+    },
+
+    secondaryDescription: {
+      ...Typography.caption,
+      color: theme.textSecondary,
+    },
+
+    secondaryFooter: {
+      marginTop: 'auto',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+
+    secondaryFooterText: {
+      ...Typography.captionMedium,
     },
   });
 };

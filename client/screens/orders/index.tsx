@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, Keyboard, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, Keyboard, KeyboardAvoidingView, Platform, ActivityIndicator, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Feather, FontAwesome6 } from '@expo/vector-icons';
@@ -1411,6 +1411,109 @@ export default function OrdersScreen() {
     }
   };
   
+  const renderAllOrdersModalItem = useCallback(({ item }: { item: Order }) => (
+    <TouchableOpacity
+      style={styles.orderListItem}
+      activeOpacity={0.7}
+      onPress={() => {
+        setAllOrdersModalVisible(false);
+        handleToggleOrder(item);
+      }}
+    >
+      <View>
+        <Text style={styles.orderListItemNo}>{item.order_no}</Text>
+        <Text style={styles.orderListItemInfo} numberOfLines={1}>
+          {item.customer_name || '未设置客户'}
+        </Text>
+      </View>
+      <Text style={{ fontSize: rf(12), color: theme.textMuted }}>
+        {formatDate(item.created_at)}
+      </Text>
+    </TouchableOpacity>
+  ), [handleToggleOrder, theme.textMuted, styles.orderListItem, styles.orderListItemInfo, styles.orderListItemNo]);
+
+  const renderMaterialSummaryItem = useCallback(({ item }: { item: MaterialSummary }) => (
+    <TouchableOpacity
+      style={{
+        backgroundColor: theme.backgroundTertiary,
+        borderRadius: BorderRadius.lg,
+        padding: Spacing.md,
+        marginBottom: Spacing.sm,
+      }}
+      activeOpacity={0.7}
+      onPress={() => handleOpenMaterialDetail(item.model)}
+    >
+      <View style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: Spacing.xs,
+      }}>
+        <Text style={{ fontSize: rf(16), fontWeight: '700', color: theme.textPrimary, flex: 1 }} numberOfLines={1}>
+          {item.model}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Feather name="chevron-right" size={16} color={theme.textMuted} />
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: Spacing.lg }}>
+        <View>
+          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>扫码次数</Text>
+          <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }}>{item.count} 次</Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>总数量</Text>
+          <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.primary }}>{item.totalQuantity.toLocaleString()}</Text>
+        </View>
+        {item.todayCount > 0 && (
+          <View>
+            <Text style={{ fontSize: rf(11), color: theme.textMuted }}>今日</Text>
+            <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.accent }}>{item.todayCount}</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  ), [handleOpenMaterialDetail, theme.accent, theme.backgroundTertiary, theme.primary, theme.textMuted, theme.textPrimary]);
+
+  const renderSelectedModelMaterialItem = useCallback(({ item }: { item: MaterialRecord }) => (
+    <TouchableOpacity
+      style={{
+        backgroundColor: theme.backgroundTertiary,
+        borderRadius: BorderRadius.lg,
+        padding: Spacing.md,
+        marginBottom: Spacing.sm,
+      }}
+      activeOpacity={0.7}
+      onPress={() => {
+        setMaterialDetailModalVisible(false);
+        router.push('/detail', { id: item.id });
+      }}
+    >
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs }}>
+        <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }} numberOfLines={1}>
+          {item.traceNo || '无追踪码'}
+        </Text>
+        <Text style={{ fontSize: rf(12), color: theme.textMuted }}>
+          {formatDate(item.scanned_at)}
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: Spacing.lg }}>
+        <View>
+          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>数量</Text>
+          <Text style={{ fontSize: rf(14), fontWeight: '600', color: theme.textPrimary }}>{item.quantity || 0}</Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>批次</Text>
+          <Text style={{ fontSize: rf(13), color: theme.textSecondary }}>{item.batch || '-'}</Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: rf(11), color: theme.textMuted }}>订单</Text>
+          <Text style={{ fontSize: rf(13), color: theme.textSecondary }}>{item.order_no}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  ), [router, theme.backgroundTertiary, theme.textMuted, theme.textPrimary, theme.textSecondary]);
+
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <ScrollView 
@@ -1444,7 +1547,7 @@ export default function OrdersScreen() {
             
           />
           {searchText.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')} style={styles.searchClear}>
+            <TouchableOpacity onPress={() => handleSearchInput('')} style={styles.searchClear}>
               <Feather name="x" size={16} color={theme.textMuted} />
             </TouchableOpacity>
           )}
@@ -1514,7 +1617,7 @@ export default function OrdersScreen() {
           {/* 第二行：时间筛选 Tab */}
           <View style={styles.filterRow}>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'today' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => handleTimeFilterChange('today')}
+              activeOpacity={0.7} onPress={() => setTimeFilter('today')}
             >
               <FontAwesome6 
                 name="calendar-day" 
@@ -1527,7 +1630,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'threeDays' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => handleTimeFilterChange('threeDays')}
+              activeOpacity={0.7} onPress={() => setTimeFilter('threeDays')}
             >
               <FontAwesome6 
                 name="calendar-week" 
@@ -1540,7 +1643,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'sevenDays' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => handleTimeFilterChange('sevenDays')}
+              activeOpacity={0.7} onPress={() => setTimeFilter('sevenDays')}
             >
               <FontAwesome6 
                 name="calendar-week" 
@@ -1553,7 +1656,7 @@ export default function OrdersScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.searchTypeBtn, timeFilter === 'all' && styles.searchTypeBtnActive]}
-              activeOpacity={0.7} onPress={() => handleTimeFilterChange('all')}
+              activeOpacity={0.7} onPress={() => setTimeFilter('all')}
             >
               <FontAwesome6 
                 name="calendar" 
