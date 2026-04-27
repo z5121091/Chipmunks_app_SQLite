@@ -23,6 +23,7 @@ interface Module {
   color: string;
   route: string;
   priority: 'primary' | 'secondary';
+  action: string;
 }
 
 const HomeModuleCard = React.memo<{
@@ -58,6 +59,9 @@ const HomeModuleCard = React.memo<{
         </Text>
 
         <View style={isPrimary ? styles.primaryFooter : styles.secondaryFooter}>
+          <Text style={isPrimary ? styles.primaryAction : styles.secondaryAction}>
+            {module.action}
+          </Text>
           <Feather name="arrow-up-right" size={isPrimary ? 16 : 14} color={module.color} />
         </View>
 
@@ -69,6 +73,7 @@ const HomeModuleCard = React.memo<{
   prevProps.module.id === nextProps.module.id &&
   prevProps.module.route === nextProps.module.route &&
   prevProps.module.name === nextProps.module.name &&
+  prevProps.module.action === nextProps.module.action &&
   prevProps.variant === nextProps.variant &&
   prevProps.screenWidth === nextProps.screenWidth
 ));
@@ -138,6 +143,7 @@ export default function HomeScreen() {
       color: moduleColors[0],
       route: '/inbound',
       priority: 'primary',
+      action: '开始扫码',
     },
     {
       id: 'outbound',
@@ -146,6 +152,7 @@ export default function HomeScreen() {
       color: moduleColors[1],
       route: '/outbound',
       priority: 'primary',
+      action: '开始扫码',
     },
     {
       id: 'orders',
@@ -154,6 +161,7 @@ export default function HomeScreen() {
       color: moduleColors[2],
       route: '/orders',
       priority: 'secondary',
+      action: '查订单',
     },
     {
       id: 'inventory',
@@ -162,6 +170,7 @@ export default function HomeScreen() {
       color: moduleColors[3],
       route: '/inventory',
       priority: 'secondary',
+      action: '去盘点',
     },
     {
       id: 'material',
@@ -170,6 +179,7 @@ export default function HomeScreen() {
       color: moduleColors[4],
       route: '/inventory-binding',
       priority: 'secondary',
+      action: '绑物料',
     },
     {
       id: 'settings',
@@ -178,6 +188,7 @@ export default function HomeScreen() {
       color: moduleColors[5],
       route: '/settings',
       priority: 'secondary',
+      action: '设置',
     },
   ];
 
@@ -214,19 +225,19 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
-            <Text style={styles.heroEyebrow}>仓库作业台</Text>
-            <Text style={styles.heroTitle}>掌上仓库</Text>
+            <Text style={styles.heroEyebrow}>掌上仓库</Text>
+            <Text style={styles.heroTitle}>仓库作业台</Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>高频操作</Text>
+            <Text style={styles.sectionLabel}>扫码作业</Text>
             <View style={styles.primaryGrid}>
               {primaryModules.map(renderPrimaryCard)}
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>辅助功能</Text>
+            <Text style={styles.sectionLabel}>查询配置</Text>
             <View style={styles.secondaryGrid}>
               {secondaryModules.map(renderSecondaryCard)}
             </View>

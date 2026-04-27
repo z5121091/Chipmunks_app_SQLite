@@ -12,8 +12,10 @@ import { AnimatedCard } from '@/components/AnimatedCard';
 import {
   initDatabase,
   upsertOrder,
-  getAllOrders,
-  getAllMaterials,
+  getFilteredOrders,
+  getOrderManagerStats,
+  getOrderMaterialSummaries,
+  getOrderMaterialsByModel,
   deleteOrder,
   getMaterialsByOrder,
   deleteMaterial,
@@ -21,7 +23,6 @@ import {
   getNextUnpackIndex,
   getUnpackHistoryByMaterialId,
   getAllUnpackRecords,
-  searchMaterials,
   updateMaterial,
   generateId,
   Order,
@@ -32,36 +33,10 @@ import {
   getDefaultWarehouse,
 } from '@/utils/database';
 import { STORAGE_KEYS, SyncConfig } from '@/constants/config';
-import { formatDate, formatDateTime, formatTime, getTodayLocal } from '@/utils/time';
+import { formatDate, formatDateTime, formatTime } from '@/utils/time';
 import { useSafeRouter, useSafeSearchParams } from '@/hooks/useSafeRouter';
 import { Spacing, BorderRadius, BorderWidth } from '@/constants/theme';
 import { rf } from '@/utils/responsive';
-
-/**
- * 从订单号提取日期
- * 订单号格式: IO-年-月-日-序号 (如 IO-2024-04-21-001)
- * 返回 YYYY/M/D 格式
- */
-const extractDateFromOrderNo = (orderNo: string): string => {
-  const match = orderNo.match(/^IO-(\d{4})-(\d{2})-(\d{2})-\d{2,3}$/);
-  if (match) {
-    // 月和日不补零，与 getTodayLocal() 格式一致
-    return `${match[1]}/${parseInt(match[2], 10)}/${parseInt(match[3], 10)}`;
-  }
-  return '';
-};
-
-/**
- * 计算订单日期与今天的天数差
- * @returns 负数表示未来，正数表示过去
- */
-const getDaysDiff = (orderDate: string, today: string): number => {
-  const [y1, m1, d1] = orderDate.split('/').map(Number);
-  const [y2, m2, d2] = today.split('/').map(Number);
-  const orderTs = new Date(y1, m1 - 1, d1).getTime();
-  const todayTs = new Date(y2, m2 - 1, d2).getTime();
-  return Math.round((orderTs - todayTs) / (1000 * 60 * 60 * 24));
-};
 
 // 物料汇总接口
 interface MaterialSummary {
@@ -377,226 +352,61 @@ export default function OrdersScreen() {
     setCurrentWarehouse(def || list[0] || null);
   }, []);
   
-  // 筛选订单（根据仓库和时间）
-  const sortOrdersDescending = useCallback((list: Order[]) => (
-    [...list].sort((a, b) => b.order_no.localeCompare(a.order_no, undefined, { numeric: true }))
-  ), []);
-
-  const filterOrdersByWarehouseAndTime = useCallback((
-    allOrders: Order[],
-    warehouseId?: string,
-    timeFilterValue: TimeFilterType = timeFilter
-  ): Order[] => {
-    let filtered = allOrders;
-
-    // 按仓库筛选（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
-    const targetWarehouseId = warehouseId || currentWarehouse?.id;
-    if (targetWarehouseId) {
-      filtered = filtered.filter(o => o.warehouse_id === targetWarehouseId);
-    }
-    
-    // 按时间筛选（使用订单号日期判断）
-    const today = getTodayLocal();
-    if (timeFilterValue === 'today') {
-      filtered = filtered.filter(o => extractDateFromOrderNo(o.order_no) === today);
-    } else if (timeFilterValue === 'threeDays') {
-      // 近三天：订单号日期 = 今天 或 昨天 或 前天
-      filtered = filtered.filter(o => {
-        const orderDate = extractDateFromOrderNo(o.order_no);
-        const diff = getDaysDiff(orderDate, today);
-        return diff === 0 || diff === -1 || diff === -2;
-      });
-    } else if (timeFilterValue === 'sevenDays') {
-      // 近七天：订单号日期 = 今天到7天前
-      filtered = filtered.filter(o => {
-        const orderDate = extractDateFromOrderNo(o.order_no);
-        const diff = getDaysDiff(orderDate, today);
-        return diff >= -7;
-      });
-    }
-    // 'all' 不过滤
-    
-    return filtered;
-  }, [currentWarehouse, timeFilter]);
-  
-  // 计算统计数据
+  // 订单查询下沉到 SQLite，避免订单多时把全量数据拉到 JS 里过滤。
   const runOrderSearch = useCallback(async ({
     text,
     type = searchType,
-    allOrders = orders,
     warehouseId = currentWarehouse?.id,
     timeFilterValue = timeFilter,
   }: {
     text: string;
     type?: SearchType;
-    allOrders?: Order[];
     warehouseId?: string;
     timeFilterValue?: TimeFilterType;
   }) => {
-    const normalizedText = text.trim();
-    const baseOrders = filterOrdersByWarehouseAndTime(allOrders, warehouseId, timeFilterValue);
-
-    if (!normalizedText) {
-      return baseOrders;
-    }
-
-    const lowerText = normalizedText.toLowerCase();
-
-    if (type === 'batch') {
-      try {
-        const materials = await searchMaterials({
-          batch: normalizedText,
-          warehouse_id: warehouseId,
-        });
-        const orderNos = new Set(materials.map(m => m.order_no));
-        return sortOrdersDescending(baseOrders.filter(order => orderNos.has(order.order_no)));
-      } catch (error) {
-        console.error('批次搜索失败:', error);
-        return [];
-      }
-    }
-
-    if (type === 'customer') {
-      return sortOrdersDescending(baseOrders.filter(order =>
-        order.customer_name && order.customer_name.toLowerCase().includes(lowerText)
-      ));
-    }
-
-    return sortOrdersDescending(baseOrders.filter(order =>
-      order.order_no.toLowerCase().includes(lowerText)
-    ));
-  }, [currentWarehouse?.id, filterOrdersByWarehouseAndTime, orders, searchType, sortOrdersDescending, timeFilter]);
-
-  const calculateStats = useCallback(async (allOrders: Order[], allMaterials: MaterialRecord[], warehouseId?: string) => {
-    // 筛选当前仓库的物料（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
-    let warehouseMaterials = allMaterials;
-    const targetWarehouseId = warehouseId || currentWarehouse?.id;
-    if (targetWarehouseId) {
-      warehouseMaterials = allMaterials.filter(m => m.warehouse_id === targetWarehouseId);
-    }
-    
-    const today = getTodayLocal();
-    
-    // 计算指定日期区间的订单数量（使用订单号日期）
-    const getOrderCountByDateRange = (daysAgo: number) => {
-      return allOrders.filter(o => {
-        const orderDate = extractDateFromOrderNo(o.order_no);
-        if (!orderDate) return false;
-        const diff = getDaysDiff(orderDate, today);
-        return diff < 0 && diff >= -daysAgo;
-      }).length;
-    };
-    
-    // 近三天订单（包含今天）
-    const threeDaysOrderCount = allOrders.filter(o => {
-      const orderDate = extractDateFromOrderNo(o.order_no);
-      if (!orderDate) return false;
-      const diff = getDaysDiff(orderDate, today);
-      return diff >= -2;
-    }).length;
-    
-    // 近七天订单（包含今天）
-    const sevenDaysOrderCount = allOrders.filter(o => {
-      const orderDate = extractDateFromOrderNo(o.order_no);
-      if (!orderDate) return false;
-      const diff = getDaysDiff(orderDate, today);
-      return diff >= -7;
-    }).length;
-    
-    // 今天订单
-    const todayOrderCount = allOrders.filter(o => {
-      const orderDate = extractDateFromOrderNo(o.order_no);
-      return orderDate === today;
-    }).length;
-    
-    // 物料统计（使用 scanned_at，与之前保持一致）
-    const getMaterialCountByDateRange = (daysAgo: number) => {
-      const start = new Date();
-      start.setDate(start.getDate() - daysAgo);
-      // 使用补零格式，确保字典序等于日期序
-      const startStr = `${start.getFullYear()}/${String(start.getMonth() + 1).padStart(2, '0')}/${String(start.getDate()).padStart(2, '0')}`;
-      const todayPadded = `${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${String(new Date().getDate()).padStart(2, '0')}`;
-
-      return warehouseMaterials.filter(m => {
-        // 提取日期并转换为补零格式
-        const parts = m.scanned_at.split('/');
-        if (parts.length < 3) return false;
-        const dateParts = parts[1].split(' ');
-        if (dateParts.length < 2) return false;
-        const [year, month, day] = [parts[0], parts[1], parts[2].split(' ')[0]];
-        const paddedDate = `${year}/${String(parseInt(month, 10)).padStart(2, '0')}/${String(parseInt(day, 10)).padStart(2, '0')}`;
-        return paddedDate >= startStr && paddedDate <= todayPadded;
-      });
-    };
-
-    // 今天物料统计（使用补零格式）
-    const todayPadded = `${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${String(new Date().getDate()).padStart(2, '0')}`;
-    const todayMaterialsList = warehouseMaterials.filter(m => {
-      const parts = m.scanned_at.split('/');
-      if (parts.length < 3) return false;
-      const [year, month, day] = [parts[0], parts[1], parts[2].split(' ')[0]];
-      const paddedDate = `${year}/${String(parseInt(month, 10)).padStart(2, '0')}/${String(parseInt(day, 10)).padStart(2, '0')}`;
-      return paddedDate === todayPadded;
+    return getFilteredOrders({
+      searchText: text,
+      searchType: type,
+      warehouseId,
+      timeFilter: timeFilterValue,
     });
-    const threeDaysMaterialsList = getMaterialCountByDateRange(2);
-    const sevenDaysMaterialsList = getMaterialCountByDateRange(6);
-    
-    return {
-      totalOrders: allOrders.length,
-      totalMaterials: warehouseMaterials.length,
-      totalQuantity: warehouseMaterials.reduce((sum, m) => sum + (m.quantity || 0), 0),
-      todayOrders: todayOrderCount,
-      todayMaterials: todayMaterialsList.length,
-      todayQuantity: todayMaterialsList.reduce((sum, m) => sum + (m.quantity || 0), 0),
-      threeDaysOrders: threeDaysOrderCount,
-      threeDaysMaterials: threeDaysMaterialsList.length,
-      threeDaysQuantity: threeDaysMaterialsList.reduce((sum, m) => sum + (m.quantity || 0), 0),
-      sevenDaysOrders: sevenDaysOrderCount,
-      sevenDaysMaterials: sevenDaysMaterialsList.length,
-      sevenDaysQuantity: sevenDaysMaterialsList.reduce((sum, m) => sum + (m.quantity || 0), 0),
-    };
-  }, [currentWarehouse]);
+  }, [currentWarehouse?.id, searchType, timeFilter]);
   
   // 加载数据
   const loadData = useCallback(async () => {
     try {
-      const [ordersData, materialsData] = await Promise.all([
-        getAllOrders(),
-        getAllMaterials(currentWarehouse?.id),
+      const warehouseId = currentWarehouse?.id;
+      const [allOrdersForWarehouse, filtered, statsData] = await Promise.all([
+        getFilteredOrders({
+          warehouseId,
+          timeFilter: 'all',
+        }),
+        runOrderSearch({
+          text: searchText,
+          type: searchType,
+          warehouseId,
+          timeFilterValue: timeFilter,
+        }),
+        getOrderManagerStats(warehouseId),
       ]);
-      
-      // 按订单号从大到小排序
-      const sortedOrders = sortOrdersDescending(ordersData);
-      
-      setOrders(sortedOrders);
-      
-      // 根据仓库和时间筛选
-      const filtered = await runOrderSearch({
-        text: searchText,
-        type: searchType,
-        allOrders: sortedOrders,
-        warehouseId: currentWarehouse?.id,
-        timeFilterValue: timeFilter,
-      });
+
+      setOrders(allOrdersForWarehouse);
       setFilteredOrders(filtered);
-      
-      // 计算统计数据
-      const statsData = await calculateStats(sortedOrders, materialsData);
       setStats(statsData);
       
       // 如果有展开的订单，刷新其物料列表
       const currentExpandedId = expandedOrderIdRef.current;
       if (currentExpandedId) {
-        const expandedOrder = filtered.find(o => o.id === currentExpandedId);
+        const expandedOrder = allOrdersForWarehouse.find(o => o.id === currentExpandedId);
         if (expandedOrder) {
-          const materials = await getMaterialsByOrder(expandedOrder.order_no, currentWarehouse?.id);
+          const materials = await getMaterialsByOrder(expandedOrder.order_no, warehouseId);
           setExpandedMaterials(materials);
         }
       }
     } catch (error) {
       console.error('加载数据失败:', error);
     }
-  }, [calculateStats, currentWarehouse?.id, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
+  }, [currentWarehouse?.id, runOrderSearch, searchText, searchType, timeFilter]);
   
   // 搜索过滤
   const handleSearchInput = useCallback((text: string) => {
@@ -619,7 +429,6 @@ export default function OrdersScreen() {
       runOrderSearch({
         text: searchText,
         type: searchType,
-        allOrders: orders,
         warehouseId: currentWarehouse?.id,
         timeFilterValue: timeFilter,
       }).then(result => {
@@ -636,7 +445,7 @@ export default function OrdersScreen() {
         searchTimeoutRef.current = null;
       }
     };
-  }, [currentWarehouse?.id, orders, runOrderSearch, searchText, searchType, timeFilter]);
+  }, [currentWarehouse?.id, runOrderSearch, searchText, searchType, timeFilter]);
 
   const loadDataRef = useRef(loadData);
   
@@ -677,35 +486,28 @@ export default function OrdersScreen() {
     // 保存到订单管理独立的 Storage Key（不与扫码出库共享）
     AsyncStorage.setItem(STORAGE_KEYS.GLOBAL_WAREHOUSE, JSON.stringify(warehouse));
 
-    // 仓库切换后，重新加载数据（包括重新计算统计数据）
-    const [ordersData, materialsData] = await Promise.all([
-      getAllOrders(),
-      getAllMaterials(warehouse.id),  // 使用新仓库的 ID
+    const [allOrdersForWarehouse, filtered, statsData] = await Promise.all([
+      getFilteredOrders({
+        warehouseId: warehouse.id,
+        timeFilter: 'all',
+      }),
+      runOrderSearch({
+        text: searchText,
+        type: searchType,
+        warehouseId: warehouse.id,
+        timeFilterValue: timeFilter,
+      }),
+      getOrderManagerStats(warehouse.id),
     ]);
 
-    // 按订单号从大到小排序
-    const sortedOrders = sortOrdersDescending(ordersData);
-
-    setOrders(sortedOrders);
-
-    // 根据仓库和时间筛选（传入新仓库的 ID）
-    const filtered = await runOrderSearch({
-      text: searchText,
-      type: searchType,
-      allOrders: sortedOrders,
-      warehouseId: warehouse.id,
-      timeFilterValue: timeFilter,
-    });
+    setOrders(allOrdersForWarehouse);
     setFilteredOrders(filtered);
-
-    // 计算统计数据（传入新仓库的 ID）
-    const statsData = await calculateStats(sortedOrders, materialsData, warehouse.id);
     setStats(statsData);
 
     // 清空展开的订单（因为仓库切换后物料列表可能为空）
     setExpandedOrderId(null);
     setExpandedMaterials([]);
-  }, [calculateStats, currentWarehouse, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
+  }, [currentWarehouse, runOrderSearch, searchText, searchType, timeFilter]);
   
   const handleTimeFilterChange = useCallback((filter: TimeFilterType) => {
     setTimeFilter(filter);
@@ -799,61 +601,12 @@ export default function OrdersScreen() {
   // 打开物料汇总弹窗
   const handleOpenMaterials = async (todayOnly: boolean = false) => {
     try {
-      const allMaterials = await getAllMaterials();
-      const today = getTodayLocal();
-
-      // 先按仓库筛选（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
-      let materials = currentWarehouse
-        ? allMaterials.filter(m => m.warehouse_id === currentWarehouse.id)
-        : allMaterials;
-      
-      // 根据 todayOnly 参数筛选物料（BUG 7 修复：使用 getTodayLocal）
-      if (todayOnly) {
-        materials = materials.filter(m => m.scanned_at && m.scanned_at.slice(0, 10) === today);
-      } else if (timeFilter === 'threeDays') {
-        const threeDaysDate = new Date();
-        threeDaysDate.setDate(threeDaysDate.getDate() - 2);
-        const startStr = `${threeDaysDate.getFullYear()}/${threeDaysDate.getMonth() + 1}/${threeDaysDate.getDate()}`;
-        materials = materials.filter(m => {
-          const date = m.scanned_at.slice(0, 10);
-          return date >= startStr && date <= today;
-        });
-      } else if (timeFilter === 'sevenDays') {
-        const sevenDaysDate = new Date();
-        sevenDaysDate.setDate(sevenDaysDate.getDate() - 6);
-        const startStr = `${sevenDaysDate.getFullYear()}/${sevenDaysDate.getMonth() + 1}/${sevenDaysDate.getDate()}`;
-        materials = materials.filter(m => {
-          const date = m.scanned_at.slice(0, 10);
-          return date >= startStr && date <= today;
-        });
-      }
-      
-      const summaryMap = new Map<string, MaterialSummary>();
-      let totalQty = 0;
-      
-      materials.forEach(m => {
-        const model = m.model || '未知型号';
-        const qty = m.quantity || 0;
-        const isToday = m.scanned_at && m.scanned_at.slice(0, 10) === today;
-        
-        totalQty += qty;
-        
-        if (!summaryMap.has(model)) {
-          summaryMap.set(model, {
-            model,
-            count: 0,
-            totalQuantity: 0,
-            todayCount: 0,
-          });
-        }
-        
-        const summary = summaryMap.get(model)!;
-        summary.count++;
-        summary.totalQuantity += qty;
-        if (isToday) summary.todayCount++;
+      const summaries = await getOrderMaterialSummaries({
+        warehouseId: currentWarehouse?.id,
+        timeFilter: todayOnly ? 'today' : timeFilter,
       });
-      
-      const summaries = Array.from(summaryMap.values()).sort((a, b) => b.totalQuantity - a.totalQuantity);
+      const totalQty = summaries.reduce((sum, item) => sum + item.totalQuantity, 0);
+
       setMaterialSummaries(summaries);
       setMaterialTotalQuantity(totalQty);
       setMaterialsModalVisible(true);
@@ -865,34 +618,11 @@ export default function OrdersScreen() {
   // 打开物料详情弹窗（按型号筛选）
   const handleOpenMaterialDetail = async (model: string) => {
     try {
-      const allMaterials = await getAllMaterials();
-      const today = getTodayLocal();
-
-      // 先按仓库筛选（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
-      let filtered = currentWarehouse
-        ? allMaterials.filter(m => m.warehouse_id === currentWarehouse.id && (m.model || '未知型号') === model)
-        : allMaterials.filter(m => (m.model || '未知型号') === model);
-      
-      // 根据 timeFilter 筛选物料（BUG 9 修复：使用 getTodayLocal）
-      if (timeFilter === 'today') {
-        filtered = filtered.filter(m => m.scanned_at && m.scanned_at.slice(0, 10) === today);
-      } else if (timeFilter === 'threeDays') {
-        const threeDaysDate = new Date();
-        threeDaysDate.setDate(threeDaysDate.getDate() - 2);
-        const startStr = `${threeDaysDate.getFullYear()}/${threeDaysDate.getMonth() + 1}/${threeDaysDate.getDate()}`;
-        filtered = filtered.filter(m => {
-          const date = m.scanned_at.slice(0, 10);
-          return date >= startStr && date <= today;
-        });
-      } else if (timeFilter === 'sevenDays') {
-        const sevenDaysDate = new Date();
-        sevenDaysDate.setDate(sevenDaysDate.getDate() - 6);
-        const startStr = `${sevenDaysDate.getFullYear()}/${sevenDaysDate.getMonth() + 1}/${sevenDaysDate.getDate()}`;
-        filtered = filtered.filter(m => {
-          const date = m.scanned_at.slice(0, 10);
-          return date >= startStr && date <= today;
-        });
-      }
+      const filtered = await getOrderMaterialsByModel({
+        model,
+        warehouseId: currentWarehouse?.id,
+        timeFilter,
+      });
       
       setSelectedModel(model);
       setSelectedModelMaterials(filtered);

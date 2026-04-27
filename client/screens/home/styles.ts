@@ -7,7 +7,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
   const primaryGap = isSmallScreen ? 10 : 14;
   const secondaryGap = isSmallScreen ? 10 : 14;
   const secondaryCardWidth = (screenWidth - horizontalPadding * 2 - secondaryGap) / 2;
-  const primaryCardHeight = Math.max(132, Math.min(screenHeight * 0.18, 164));
+  const primaryCardHeight = Math.max(138, Math.min(screenHeight * 0.19, 170));
   const secondaryCardHeight = Math.max(88, Math.min(screenHeight * 0.12, 112));
   const primaryIconSize = isSmallScreen ? 52 : 58;
   const secondaryIconSize = isSmallScreen ? 36 : 40;
@@ -25,7 +25,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     },
 
     hero: {
-      marginBottom: Spacing.md,
+      marginBottom: Spacing.lg,
     },
 
     heroEyebrow: {
@@ -37,6 +37,7 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     heroTitle: {
       ...Typography.h2,
       color: theme.textPrimary,
+      letterSpacing: 0.3,
     },
 
     section: {
@@ -45,8 +46,9 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
 
     sectionLabel: {
       ...Typography.captionMedium,
-      color: theme.textMuted,
+      color: theme.textSecondary,
       marginBottom: Spacing.sm,
+      letterSpacing: 0.8,
     },
 
     primaryGrid: {
@@ -61,6 +63,11 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       borderWidth: 2,
       backgroundColor: theme.backgroundDefault,
       overflow: 'hidden',
+      shadowColor: theme.textPrimary,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.08,
+      shadowRadius: 14,
+      elevation: 3,
     },
 
     primaryCardInner: {
@@ -80,13 +87,24 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     primaryTitle: {
       ...Typography.h4,
       color: theme.textPrimary,
+      letterSpacing: 0.2,
     },
 
     primaryFooter: {
       marginTop: 'auto',
       flexDirection: 'row',
       alignItems: 'center',
+      alignSelf: 'flex-start',
       gap: 6,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: theme.backgroundTertiary,
+    },
+
+    primaryAction: {
+      ...Typography.captionMedium,
+      color: theme.textPrimary,
     },
 
     primaryAccent: {
@@ -138,6 +156,11 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
+    },
+
+    secondaryAction: {
+      ...Typography.caption,
+      color: theme.textSecondary,
     },
 
   });

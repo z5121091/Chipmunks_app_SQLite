@@ -1173,6 +1173,9 @@ const performDatabaseInitialization = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_orders_warehouse_created
       ON orders (warehouse_id, created_at DESC);
 
+      CREATE INDEX IF NOT EXISTS idx_orders_warehouse_order_no
+      ON orders (warehouse_id, order_no DESC);
+
       CREATE INDEX IF NOT EXISTS idx_materials_order_warehouse
       ON materials (order_no, warehouse_id);
 
@@ -1416,6 +1419,465 @@ export const getAllOrders = async (): Promise<Order[]> => {
     return await database.getAllAsync<Order>('SELECT * FROM orders ORDER BY created_at DESC');
   } catch (error) {
     console.error('获取订单列表失败:', error);
+    return [];
+  }
+};
+
+export type OrderTimeFilter = 'today' | 'threeDays' | 'sevenDays' | 'all';
+export type OrderSearchType = 'order' | 'customer' | 'batch';
+
+export interface OrderManagerStats {
+  totalOrders: number;
+  totalMaterials: number;
+  totalQuantity: number;
+  todayOrders: number;
+  todayMaterials: number;
+  todayQuantity: number;
+  threeDaysOrders: number;
+  threeDaysMaterials: number;
+  threeDaysQuantity: number;
+  sevenDaysOrders: number;
+  sevenDaysMaterials: number;
+  sevenDaysQuantity: number;
+}
+
+export interface OrderMaterialSummary {
+  model: string;
+  count: number;
+  totalQuantity: number;
+  todayCount: number;
+}
+
+const toDateKeys = (date: Date) => ({
+  local: `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`,
+  order: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+});
+
+const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; order: string }> => {
+  if (filter === 'all') return [];
+
+  const days = filter === 'today' ? 1 : filter === 'threeDays' ? 3 : 7;
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - index);
+    return toDateKeys(date);
+  });
+};
+
+const appendDateLikeWhere = (
+  conditions: string[],
+  params: any[],
+  column: string,
+  values: string[],
+) => {
+  if (values.length === 0) return;
+
+  conditions.push(`(${values.map(() => `${column} LIKE ?`).join(' OR ')})`);
+  values.forEach(value => params.push(`${value}%`));
+};
+
+const normalizeMaterialRecord = (record: any): MaterialRecord => ({
+  ...record,
+  customFields: stringToJson<Record<string, string>>(record.customFields),
+  isUnpacked: record.isUnpacked === 1,
+});
+
+const extractOrderDateKey = (orderNo: string): string => {
+  const match = orderNo.match(/^IO-(\d{4})-(\d{2})-(\d{2})-\d{2,}$/);
+  if (!match) return '';
+  return `${match[1]}-${match[2]}-${match[3]}`;
+};
+
+const filterOrdersInMemory = (
+  orders: Order[],
+  params: {
+    searchText?: string;
+    searchType?: OrderSearchType;
+    warehouseId?: string;
+    timeFilter?: OrderTimeFilter;
+    batchOrderNos?: Set<string>;
+  },
+) => {
+  const searchText = params.searchText?.trim().toLowerCase() || '';
+  const allowedDates = new Set(getDateKeysForFilter(params.timeFilter || 'all').map(item => item.order));
+
+  return orders
+    .filter(order => !params.warehouseId || order.warehouse_id === params.warehouseId)
+    .filter(order => allowedDates.size === 0 || allowedDates.has(extractOrderDateKey(order.order_no)))
+    .filter(order => {
+      if (!searchText) return true;
+      if (params.searchType === 'customer') {
+        return (order.customer_name || '').toLowerCase().includes(searchText);
+      }
+      if (params.searchType === 'batch') {
+        return params.batchOrderNos?.has(order.order_no) ?? false;
+      }
+      return order.order_no.toLowerCase().includes(searchText);
+    })
+    .sort((a, b) => b.order_no.localeCompare(a.order_no, undefined, { numeric: true }));
+};
+
+const filterMaterialsInMemory = (
+  materials: MaterialRecord[],
+  warehouseId?: string,
+  timeFilter: OrderTimeFilter = 'all',
+) => {
+  const allowedDates = new Set(getDateKeysForFilter(timeFilter).map(item => item.local));
+  return materials.filter(material => (
+    (!warehouseId || material.warehouse_id === warehouseId) &&
+    (allowedDates.size === 0 || allowedDates.has((material.scanned_at || '').split(' ')[0]))
+  ));
+};
+
+export const getFilteredOrders = async (params: {
+  searchText?: string;
+  searchType?: OrderSearchType;
+  warehouseId?: string;
+  timeFilter?: OrderTimeFilter;
+}): Promise<Order[]> => {
+  try {
+    const searchText = params.searchText?.trim() || '';
+    const searchType = params.searchType || 'order';
+    const timeFilter = params.timeFilter || 'all';
+
+    if (isWebPlatform) {
+      const allOrders = await getAllOrders();
+      let batchOrderNos: Set<string> | undefined;
+
+      if (searchText && searchType === 'batch') {
+        const materials = await getAllMaterials(params.warehouseId);
+        batchOrderNos = new Set(
+          materials
+            .filter(material => (material.batch || '').toLowerCase().includes(searchText.toLowerCase()))
+            .map(material => material.order_no),
+        );
+      }
+
+      return filterOrdersInMemory(allOrders, {
+        searchText,
+        searchType,
+        warehouseId: params.warehouseId,
+        timeFilter,
+        batchOrderNos,
+      });
+    }
+
+    const database = getDb();
+    const conditions: string[] = [];
+    const queryParams: any[] = [];
+
+    if (params.warehouseId) {
+      conditions.push('warehouse_id = ?');
+      queryParams.push(params.warehouseId);
+    }
+
+    appendDateLikeWhere(
+      conditions,
+      queryParams,
+      'order_no',
+      getDateKeysForFilter(timeFilter).map(item => `IO-${item.order}-`),
+    );
+
+    if (searchText) {
+      if (searchType === 'customer') {
+        conditions.push('customer_name LIKE ?');
+        queryParams.push(`%${searchText}%`);
+      } else if (searchType === 'batch') {
+        const materialConditions = ['batch LIKE ?'];
+        const materialParams: any[] = [`%${searchText}%`];
+
+        if (params.warehouseId) {
+          materialConditions.push('warehouse_id = ?');
+          materialParams.push(params.warehouseId);
+        }
+
+        conditions.push(`order_no IN (SELECT DISTINCT order_no FROM materials WHERE ${materialConditions.join(' AND ')})`);
+        queryParams.push(...materialParams);
+      } else {
+        conditions.push('order_no LIKE ?');
+        queryParams.push(`%${searchText}%`);
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    return await database.getAllAsync<Order>(
+      `SELECT * FROM orders ${whereClause} ORDER BY order_no DESC`,
+      queryParams,
+    );
+  } catch (error) {
+    console.error('[getFilteredOrders] 查询订单失败:', error);
+    return [];
+  }
+};
+
+const getOrderCountByFilter = async (warehouseId: string | undefined, filter: OrderTimeFilter): Promise<number> => {
+  const database = getDb();
+  const conditions: string[] = [];
+  const queryParams: any[] = [];
+
+  if (warehouseId) {
+    conditions.push('warehouse_id = ?');
+    queryParams.push(warehouseId);
+  }
+
+  appendDateLikeWhere(
+    conditions,
+    queryParams,
+    'order_no',
+    getDateKeysForFilter(filter).map(item => `IO-${item.order}-`),
+  );
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await database.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM orders ${whereClause}`,
+    queryParams,
+  );
+  return result?.count || 0;
+};
+
+const getMaterialTotalsByFilter = async (
+  warehouseId: string | undefined,
+  filter: OrderTimeFilter,
+): Promise<{ count: number; quantity: number }> => {
+  const database = getDb();
+  const conditions: string[] = [];
+  const queryParams: any[] = [];
+
+  if (warehouseId) {
+    conditions.push('warehouse_id = ?');
+    queryParams.push(warehouseId);
+  }
+
+  appendDateLikeWhere(
+    conditions,
+    queryParams,
+    'scanned_at',
+    getDateKeysForFilter(filter).map(item => item.local),
+  );
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await database.getFirstAsync<{ count: number; quantity: number }>(
+    `SELECT COUNT(*) as count, COALESCE(SUM(CAST(quantity AS INTEGER)), 0) as quantity FROM materials ${whereClause}`,
+    queryParams,
+  );
+
+  return {
+    count: result?.count || 0,
+    quantity: result?.quantity || 0,
+  };
+};
+
+export const getOrderManagerStats = async (warehouseId?: string): Promise<OrderManagerStats> => {
+  try {
+    if (isWebPlatform) {
+      const [orders, materials] = await Promise.all([
+        getAllOrders(),
+        getAllMaterials(warehouseId),
+      ]);
+      const warehouseOrders = orders.filter(order => !warehouseId || order.warehouse_id === warehouseId);
+      const totalMaterials = filterMaterialsInMemory(materials, warehouseId, 'all');
+      const todayMaterials = filterMaterialsInMemory(materials, warehouseId, 'today');
+      const threeDaysMaterials = filterMaterialsInMemory(materials, warehouseId, 'threeDays');
+      const sevenDaysMaterials = filterMaterialsInMemory(materials, warehouseId, 'sevenDays');
+
+      return {
+        totalOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'all' }).length,
+        totalMaterials: totalMaterials.length,
+        totalQuantity: totalMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
+        todayOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'today' }).length,
+        todayMaterials: todayMaterials.length,
+        todayQuantity: todayMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
+        threeDaysOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'threeDays' }).length,
+        threeDaysMaterials: threeDaysMaterials.length,
+        threeDaysQuantity: threeDaysMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
+        sevenDaysOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'sevenDays' }).length,
+        sevenDaysMaterials: sevenDaysMaterials.length,
+        sevenDaysQuantity: sevenDaysMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
+      };
+    }
+
+    const [
+      totalOrders,
+      todayOrders,
+      threeDaysOrders,
+      sevenDaysOrders,
+      totalMaterials,
+      todayMaterials,
+      threeDaysMaterials,
+      sevenDaysMaterials,
+    ] = await Promise.all([
+      getOrderCountByFilter(warehouseId, 'all'),
+      getOrderCountByFilter(warehouseId, 'today'),
+      getOrderCountByFilter(warehouseId, 'threeDays'),
+      getOrderCountByFilter(warehouseId, 'sevenDays'),
+      getMaterialTotalsByFilter(warehouseId, 'all'),
+      getMaterialTotalsByFilter(warehouseId, 'today'),
+      getMaterialTotalsByFilter(warehouseId, 'threeDays'),
+      getMaterialTotalsByFilter(warehouseId, 'sevenDays'),
+    ]);
+
+    return {
+      totalOrders,
+      totalMaterials: totalMaterials.count,
+      totalQuantity: totalMaterials.quantity,
+      todayOrders,
+      todayMaterials: todayMaterials.count,
+      todayQuantity: todayMaterials.quantity,
+      threeDaysOrders,
+      threeDaysMaterials: threeDaysMaterials.count,
+      threeDaysQuantity: threeDaysMaterials.quantity,
+      sevenDaysOrders,
+      sevenDaysMaterials: sevenDaysMaterials.count,
+      sevenDaysQuantity: sevenDaysMaterials.quantity,
+    };
+  } catch (error) {
+    console.error('[getOrderManagerStats] 查询订单统计失败:', error);
+    return {
+      totalOrders: 0,
+      totalMaterials: 0,
+      totalQuantity: 0,
+      todayOrders: 0,
+      todayMaterials: 0,
+      todayQuantity: 0,
+      threeDaysOrders: 0,
+      threeDaysMaterials: 0,
+      threeDaysQuantity: 0,
+      sevenDaysOrders: 0,
+      sevenDaysMaterials: 0,
+      sevenDaysQuantity: 0,
+    };
+  }
+};
+
+export const getOrderMaterialSummaries = async (params: {
+  warehouseId?: string;
+  timeFilter?: OrderTimeFilter;
+}): Promise<OrderMaterialSummary[]> => {
+  try {
+    const timeFilter = params.timeFilter || 'all';
+    const today = toDateKeys(new Date()).local;
+
+    if (isWebPlatform) {
+      const materials = filterMaterialsInMemory(
+        await getAllMaterials(params.warehouseId),
+        params.warehouseId,
+        timeFilter,
+      );
+      const summaryMap = new Map<string, OrderMaterialSummary>();
+
+      materials.forEach(material => {
+        const model = material.model || '未知型号';
+        const summary = summaryMap.get(model) || {
+          model,
+          count: 0,
+          totalQuantity: 0,
+          todayCount: 0,
+        };
+
+        summary.count += 1;
+        summary.totalQuantity += material.quantity || 0;
+        if ((material.scanned_at || '').startsWith(today)) {
+          summary.todayCount += 1;
+        }
+        summaryMap.set(model, summary);
+      });
+
+      return Array.from(summaryMap.values()).sort((a, b) => b.totalQuantity - a.totalQuantity);
+    }
+
+    const database = getDb();
+    const conditions: string[] = [];
+    const whereParams: any[] = [];
+
+    if (params.warehouseId) {
+      conditions.push('warehouse_id = ?');
+      whereParams.push(params.warehouseId);
+    }
+
+    appendDateLikeWhere(
+      conditions,
+      whereParams,
+      'scanned_at',
+      getDateKeysForFilter(timeFilter).map(item => item.local),
+    );
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const results = await database.getAllAsync<OrderMaterialSummary>(
+      `SELECT
+        COALESCE(NULLIF(model, ''), '未知型号') as model,
+        COUNT(*) as count,
+        COALESCE(SUM(CAST(quantity AS INTEGER)), 0) as totalQuantity,
+        SUM(CASE WHEN scanned_at LIKE ? THEN 1 ELSE 0 END) as todayCount
+      FROM materials
+      ${whereClause}
+      GROUP BY COALESCE(NULLIF(model, ''), '未知型号')
+      ORDER BY totalQuantity DESC`,
+      [`${today}%`, ...whereParams],
+    );
+
+    return results.map(item => ({
+      model: item.model,
+      count: Number(item.count) || 0,
+      totalQuantity: Number(item.totalQuantity) || 0,
+      todayCount: Number(item.todayCount) || 0,
+    }));
+  } catch (error) {
+    console.error('[getOrderMaterialSummaries] 查询物料汇总失败:', error);
+    return [];
+  }
+};
+
+export const getOrderMaterialsByModel = async (params: {
+  model: string;
+  warehouseId?: string;
+  timeFilter?: OrderTimeFilter;
+}): Promise<MaterialRecord[]> => {
+  try {
+    const timeFilter = params.timeFilter || 'all';
+
+    if (isWebPlatform) {
+      return filterMaterialsInMemory(
+        await getAllMaterials(params.warehouseId),
+        params.warehouseId,
+        timeFilter,
+      )
+        .filter(material => (material.model || '未知型号') === params.model)
+        .sort((a, b) => (b.scanned_at || '').localeCompare(a.scanned_at || ''));
+    }
+
+    const database = getDb();
+    const conditions: string[] = [];
+    const queryParams: any[] = [];
+
+    if (params.warehouseId) {
+      conditions.push('warehouse_id = ?');
+      queryParams.push(params.warehouseId);
+    }
+
+    if (params.model === '未知型号') {
+      conditions.push('(model IS NULL OR model = ?)');
+      queryParams.push('');
+    } else {
+      conditions.push('model = ?');
+      queryParams.push(params.model);
+    }
+
+    appendDateLikeWhere(
+      conditions,
+      queryParams,
+      'scanned_at',
+      getDateKeysForFilter(timeFilter).map(item => item.local),
+    );
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const results = await database.getAllAsync<any>(
+      `SELECT * FROM materials ${whereClause} ORDER BY scanned_at DESC`,
+      queryParams,
+    );
+
+    return results.map(normalizeMaterialRecord);
+  } catch (error) {
+    console.error('[getOrderMaterialsByModel] 查询型号物料失败:', error);
     return [];
   }
 };

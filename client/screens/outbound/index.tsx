@@ -713,6 +713,12 @@ export default function PDAScanScreen() {
     return Array.from(map.values());
   }, [scanRecords]);
 
+  const aggregateTotals = useMemo(() => ({
+    modelCount: aggregateMaterials.length,
+    boxCount: aggregateMaterials.reduce((sum, group) => sum + group.boxCount, 0),
+    totalQuantity: aggregateMaterials.reduce((sum, group) => sum + group.totalQuantity, 0),
+  }), [aggregateMaterials]);
+
   const outboundListState = useMemo(
     () => Array.from(expandedGroups).sort().join('|'),
     [expandedGroups]
@@ -958,13 +964,15 @@ export default function PDAScanScreen() {
         </View>
 
         {/* 扫码输入 + Toast（在同一个容器里） */}
-        <View style={styles.scanBox}>
+        <View style={[styles.scanBox, inputValue.length > 0 && styles.scanBoxActive]}>
           <TextInput
             ref={inputRef}
             style={styles.scanInput}
             value={inputValue}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
+            placeholder={orderNo ? "继续扫描物料" : "先扫描订单号"}
+            placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
             autoFocus={false}
@@ -978,8 +986,10 @@ export default function PDAScanScreen() {
         {/* 物料列表 */}
         <View style={styles.listSection}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>物料列表</Text>
-            <Text style={styles.listCount}>共 {materialCount} 条</Text>
+            <Text style={styles.listTitle}>本单物料</Text>
+            <Text style={styles.listCount}>
+              {aggregateTotals.modelCount} 型号 / {aggregateTotals.boxCount || materialCount} 箱 / {aggregateTotals.totalQuantity.toLocaleString()} PCS
+            </Text>
           </View>
           <FlatList
             data={aggregateMaterials}
@@ -1000,57 +1010,6 @@ export default function PDAScanScreen() {
             }
           />
 
-          {/* 原始代码（已注释，用于快速回滚） */}
-          {/* <ScrollView style={styles.list}>
-            {aggregateMaterials.map(group => {
-              const isExpanded = expandedGroups.has(group.key);
-              return (
-                <View key={group.key}>
-                  <TouchableOpacity style={styles.itemRow}
-                    activeOpacity={0.7} onPress={() => toggleExpand(group.key)}
-                    onLongPress={() => handleDeleteGroup(group)}
-                    delayLongPress={500}
-                  >
-                    <View style={styles.itemLeft}>
-                      <Text style={styles.itemModel}>
-                        {isExpanded ? '▼' : '▶'} {group.model}
-                      </Text>
-                      <Text style={styles.itemBatch}>
-                        版本: {group.version || '-'}
-                      </Text>
-                    </View>
-                    <View style={styles.itemRight}>
-                      <Text style={styles.itemQty}>
-                        {group.totalQuantity.toLocaleString()}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  {isExpanded && (
-                    <View style={styles.detailsContainer}>
-                      {group.items.map((item) => (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={styles.detailItem}
-                          onLongPress={() => handleDeleteItem(item)}
-                          delayLongPress={500}
-                        >
-                          <Text style={styles.detailText}>
-                            批次: {item.batch || '-'}  |  生产日期: {item.productionDate || '-'}  |  数量: {parseInt(item.quantity, 10) || 0} PCS
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-            {scanRecords.length === 0 && (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>暂无物料</Text>
-              </View>
-            )}
-          </ScrollView> */}
         </View>
 
         {/* 仓库选择器 */}

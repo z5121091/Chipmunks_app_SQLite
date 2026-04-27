@@ -9,7 +9,6 @@ import {
   Alert,
   Modal,
   FlatList,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -966,13 +965,15 @@ export default function InboundScreen() {
         </View>
 
         {/* 扫码输入 + Toast（在同一个容器里） */}
-        <View style={styles.scanBox}>
+        <View style={[styles.scanBox, inputValue.length > 0 && styles.scanBoxActive]}>
           <TextInput
             ref={inputRef}
             style={styles.scanInput}
             value={inputValue}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
+            placeholder="等待扫码"
+            placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
             autoFocus={false}
@@ -986,7 +987,7 @@ export default function InboundScreen() {
         {/* 物料列表 */}
         <View style={styles.listSection}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>扫描记录</Text>
+            <Text style={styles.listTitle}>待入库记录</Text>
             <Text style={styles.listCount}>
               {aggregatedRecords.length} 型号 / {totalQuantity} PCS
               {confirmedCount > 0 && ` / 已确认 ${confirmedCount}`}
@@ -1011,78 +1012,11 @@ export default function InboundScreen() {
             }
           />
 
-          {/* 原始代码（已注释，用于快速回滚） */}
-          {/* <ScrollView style={styles.list}>
-            {aggregatedRecords.map((item) => {
-              const key = `${item.model}|${item.version}`;
-              const isExpanded = expandedGroups.has(key);
-              const isConfirmed = confirmedGroups.has(key);
-
-              return (
-                <View key={key} style={styles.itemContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.itemRow,
-                      isConfirmed && styles.itemConfirmed
-                    ]}
-                    onLongPress={() => handleDeleteGroup(item)}
-                  >
-                    <TouchableOpacity style={styles.checkbox}
-                      activeOpacity={0.7} onPress={() => toggleConfirm(key)}
-                    >
-                      <FontAwesome6
-                        name={isConfirmed ? "square-check" : "square"}
-                        size={18}
-                        color={isConfirmed ? theme.success : theme.textMuted}
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.modelContent}
-                      activeOpacity={0.7} onPress={() => toggleExpand(key)}
-                    >
-                      <Text style={[styles.itemModel, isConfirmed && styles.itemModelConfirmed]}>
-                        {isExpanded ? '▼' : '▶'} {item.model}
-                      </Text>
-                      <Text style={[styles.itemBatch, isConfirmed && styles.itemModelConfirmed]}>
-                        版本: {item.version || '-'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <Text style={[styles.itemQty, isConfirmed && styles.itemQtyConfirmed]}>
-                      {item.totalQuantity.toLocaleString()}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {isExpanded && (
-                    <View style={styles.detailsContainer}>
-                      {item.records.map((record) => (
-                        <TouchableOpacity
-                          key={record.id}
-                          style={styles.detailItem}
-                          onLongPress={() => handleDeleteRecord(record)}
-                          delayLongPress={500}
-                        >
-                          <Text style={styles.detailText}>
-                            批次: {record.batch || '-'}{record.productionDate ? `  |  生产日期: ${record.productionDate}` : ''}  |  数量: {record.quantity} PCS
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-            {scanRecords.length === 0 && (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>暂无扫描记录</Text>
-              </View>
-            )}
-          </ScrollView> */}
-
           {/* 操作按钮 */}
           {scanRecords.length > 0 && (
             <View style={styles.actionBar}>
               <TouchableOpacity style={styles.clearBtn} activeOpacity={0.7} onPress={handleClearRecords}>
+                <Feather name="trash-2" size={17} color={theme.textSecondary} />
                 <Text style={styles.clearBtnText}>{Str.btnClear}</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1094,7 +1028,10 @@ export default function InboundScreen() {
                 {saving ? (
                   <ActivityIndicator color={theme.buttonPrimaryText} />
                 ) : (
-                  <Text style={styles.submitBtnText}>{Str.inboundConfirm}</Text>
+                  <>
+                    <Feather name="check-circle" size={18} color={theme.buttonPrimaryText} />
+                    <Text style={styles.submitBtnText}>保存入库</Text>
+                  </>
                 )}
               </TouchableOpacity>
             </View>
