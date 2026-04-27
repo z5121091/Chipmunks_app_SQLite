@@ -1832,6 +1832,7 @@ export const getAllMaterials = async (warehouseId?: string): Promise<MaterialRec
 export const searchMaterials = async (params: {
   operation_type?: 'inbound' | 'outbound' | 'inventory';
   orderNo?: string;
+  exactOrderNo?: string;
   customerName?: string;
   startDate?: string;
   endDate?: string;
@@ -1849,7 +1850,10 @@ export const searchMaterials = async (params: {
       queryParams.push(params.operation_type);
     }
 
-    if (params.orderNo) {
+    if (params.exactOrderNo) {
+      conditions.push('order_no = ?');
+      queryParams.push(params.exactOrderNo);
+    } else if (params.orderNo) {
       conditions.push('order_no LIKE ?');
       queryParams.push(`%${params.orderNo}%`);
     }

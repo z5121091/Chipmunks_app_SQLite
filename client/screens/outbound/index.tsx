@@ -68,11 +68,12 @@ interface AggregatedGroup {
 // ========================================
 // React.memo 优化：列表项组件
 // ========================================
-const RecordItem = React.memo(({ group, isExpanded, onToggle, onDelete, styles }: {
+const RecordItem = React.memo(({ group, isExpanded, onToggle, onDeleteGroup, onDeleteItem, styles }: {
   group: any;
   isExpanded: boolean;
   onToggle: (key: string) => void;
-  onDelete: (group: any) => void;
+  onDeleteGroup: (group: any) => void;
+  onDeleteItem: (item: any) => void;
   styles: any;
 }) => {
   return (
@@ -80,7 +81,7 @@ const RecordItem = React.memo(({ group, isExpanded, onToggle, onDelete, styles }
       {/* 聚合项（两行布局） */}
       <TouchableOpacity style={styles.itemRow}
         activeOpacity={0.7} onPress={() => onToggle(group.key)}
-        onLongPress={() => onDelete(group)}
+        onLongPress={() => onDeleteGroup(group)}
         delayLongPress={500}
       >
         <View style={styles.itemLeft}>
@@ -105,7 +106,7 @@ const RecordItem = React.memo(({ group, isExpanded, onToggle, onDelete, styles }
             <TouchableOpacity
               key={item.id}
               style={styles.detailItem}
-              onLongPress={() => onDelete(item)}
+              onLongPress={() => onDeleteItem(item)}
               delayLongPress={500}
             >
               <Text style={styles.detailText}>
@@ -474,7 +475,7 @@ export default function PDAScanScreen() {
     }
 
     const list = await searchMaterials({
-      orderNo: no.trim(),
+      exactOrderNo: no.trim(),
       warehouse_id: warehouseId.trim()
     });
     setMaterialCount(list.length);
@@ -966,7 +967,8 @@ export default function PDAScanScreen() {
                   group={group}
                   isExpanded={isExpanded}
                   onToggle={toggleExpand}
-                  onDelete={handleDeleteGroup}
+                  onDeleteGroup={handleDeleteGroup}
+                  onDeleteItem={handleDeleteItem}
                   styles={styles}
                 />
               );
