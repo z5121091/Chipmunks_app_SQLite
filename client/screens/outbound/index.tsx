@@ -146,6 +146,9 @@ export default function PDAScanScreen() {
   const [inputValue, setInputValue] = useState('');
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingInputRef = useRef('');
+  const scannerFocusBlockedRef = useRef(false);
   const orderNoRef = useRef(''); // 🔥 添加 orderNoRef，用于批量写入时判断是否需要刷新
 
   // 仓库
@@ -171,6 +174,35 @@ export default function PDAScanScreen() {
   // Toast
   const { showToast, ToastContainer } = useToast();
 
+  useEffect(() => {
+    scannerFocusBlockedRef.current = showWarehousePicker;
+  }, [showWarehousePicker]);
+
+  const focusScannerInput = useCallback((delay = 80) => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
+      if (!scannerFocusBlockedRef.current) {
+        inputRef.current?.focus();
+      }
+    }, delay);
+  }, []);
+
+  useEffect(() => () => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showWarehousePicker) {
+      focusScannerInput(80);
+    }
+  }, [focusScannerInput, showWarehousePicker]);
+
   // AsyncStorage Key
   const OUTBOUND_SCAN_RECORDS_KEY = 'outbound_scan_records';
 
@@ -180,7 +212,7 @@ export default function PDAScanScreen() {
   // 页面聚焦时初始化和恢复数据
   useFocusEffect(
     useCallback(() => {
-      let focusTimer: NodeJS.Timeout | null = null;
+      let isActive = true;
 
       const init = async () => {
         // 1. 设置批量写入函数（数据库写入前强制等待数据库初始化）
@@ -348,7 +380,9 @@ export default function PDAScanScreen() {
         await loadOutboundState(list);
 
         // 10. 聚焦输入框
-        focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
+        if (isActive) {
+          focusScannerInput(100);
+        }
 
         // 返回清理函数
         return () => {
@@ -360,18 +394,16 @@ export default function PDAScanScreen() {
       const cleanupPromise = init();
 
       return () => {
+        isActive = false;
         if (autoSubmitTimerRef.current) {
           clearTimeout(autoSubmitTimerRef.current);
-        }
-        if (focusTimer) {
-          clearTimeout(focusTimer);
         }
         // 等待 init 完成，清理订阅
         cleanupPromise.then(cleanup => {
           if (cleanup) cleanup();
         }).catch(console.error);
       };
-    }, [])
+    }, [focusScannerInput])
   );
 
   // 加载扫码出库持久化状态（订单号、仓库、扫码记录）
@@ -679,11 +711,24 @@ export default function PDAScanScreen() {
       showToast(`错误: ${errorMessage}`, 'error');
       feedbackError();
     } finally {
-      processingRef.current = false;
-      // 重新聚焦输入框
-      inputRef.current?.focus();
+      // 给扫码枪留一个很短的输入窗口，避免上一条还在处理时下一条被吞掉。
+      setTimeout(() => {
+        const pendingCode = pendingInputRef.current.trim();
+        pendingInputRef.current = '';
+        processingRef.current = false;
+
+        if (pendingCode) {
+          setInputValue('');
+          if (ORDER_NO_REGEX.test(pendingCode) || isQRCode(pendingCode)) {
+            processScan(pendingCode);
+            return;
+          }
+        }
+
+        focusScannerInput(0);
+      }, 170);
     }
-  }, [orderNo, currentWarehouse]);
+  }, [currentWarehouse, focusScannerInput, orderNo]);
 
   // 聚合物料（按型号+版本）
   const aggregateMaterials = useMemo(() => {
@@ -715,7 +760,6 @@ export default function PDAScanScreen() {
 
   const aggregateTotals = useMemo(() => ({
     modelCount: aggregateMaterials.length,
-    boxCount: aggregateMaterials.reduce((sum, group) => sum + group.boxCount, 0),
     totalQuantity: aggregateMaterials.reduce((sum, group) => sum + group.totalQuantity, 0),
   }), [aggregateMaterials]);
 
@@ -753,11 +797,11 @@ export default function PDAScanScreen() {
     });
   };
 
-  // 删除聚合组（所有箱）
+  // 删除聚合组（同型号/版本的所有记录）
   const handleDeleteGroup = useCallback((group: AggregatedGroup) => {
     Alert.alert(
       '确认删除',
-      `确定要删除 ${group.model} 的所有 ${group.boxCount} 箱物料吗？`,
+      `确定要删除 ${group.model} 的所有 ${group.boxCount} 条物料吗？`,
       [
         { text: '取消', style: 'cancel' },
         {
@@ -771,7 +815,7 @@ export default function PDAScanScreen() {
               if (orderNo) {
                 await loadOrderMaterials(orderNo);
               }
-              showToast(`已删除 ${group.boxCount} 箱物料`, 'success');
+              showToast(`已删除 ${group.boxCount} 条物料`, 'success');
             } catch (error) {
               console.error('删除失败:', error);
               showToast('删除失败', 'error');
@@ -831,7 +875,7 @@ export default function PDAScanScreen() {
     setInputValue(''); // 清空输入框
     await processScan(code);
     // 注意：processScan 的 finally 块会处理重新聚焦
-  }, [inputValue, processScan]);
+  }, [focusScannerInput, inputValue, processScan]);
 
   // 输入变化时自动检测并触发（扫码器逐字符输入，需要防抖检测完成）
   const handleInputChange = useCallback((text: string) => {
@@ -843,7 +887,8 @@ export default function PDAScanScreen() {
 
     // 如果正在处理中，忽略新的输入（避免并发问题）
     if (processingRef.current) {
-      console.log('[输入处理] 正在处理中，忽略新输入');
+      pendingInputRef.current = text;
+      setInputValue(text);
       return;
     }
 
@@ -862,7 +907,7 @@ export default function PDAScanScreen() {
           // 一维码过滤：不含分隔符的扫码静默忽略
           if (!isQRCode(code)) {
             setInputValue(''); // 清空输入框
-            inputRef.current?.focus(); // 重新聚焦
+            focusScannerInput(0);
             return;
           }
           setInputValue(''); // 清空输入框
@@ -874,7 +919,7 @@ export default function PDAScanScreen() {
 
     // 输入框被清空时，更新状态
     setInputValue(text);
-  }, [processScan]);
+  }, [focusScannerInput, processScan]);
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
@@ -899,7 +944,7 @@ export default function PDAScanScreen() {
     // 一维码过滤：不含分隔符的扫码静默忽略
     if (!isQRCode(code)) {
       setInputValue('');
-      inputRef.current?.focus();
+      focusScannerInput(0);
       return;
     }
 
@@ -929,7 +974,7 @@ export default function PDAScanScreen() {
     handleWarehouseChange(wh);
     setShowWarehousePicker(false);
     showToast(`已切换到 ${wh.name}`, 'success');
-    setTimeout(() => inputRef.current?.focus(), 100);
+    focusScannerInput(100);
   };
 
   return (
@@ -971,6 +1016,7 @@ export default function PDAScanScreen() {
             value={inputValue}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
+            onBlur={() => focusScannerInput(120)}
             placeholder={orderNo ? "继续扫描物料" : "先扫描订单号"}
             placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
@@ -988,7 +1034,7 @@ export default function PDAScanScreen() {
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>本单物料</Text>
             <Text style={styles.listCount}>
-              {aggregateTotals.modelCount} 型号 / {aggregateTotals.boxCount || materialCount} 箱 / {aggregateTotals.totalQuantity.toLocaleString()} PCS
+              {aggregateTotals.modelCount} 型号 / {aggregateTotals.totalQuantity.toLocaleString()} PCS
             </Text>
           </View>
           <FlatList

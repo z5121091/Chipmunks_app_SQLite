@@ -11,6 +11,9 @@ import { STORAGE_KEYS } from '@/constants/config';
 
 // 声音开关状态缓存（同步访问）
 let soundEnabled: boolean = true;
+let lastSuccessFeedbackAt = 0;
+
+const SUCCESS_FEEDBACK_MIN_INTERVAL = 180;
 
 /**
  * 初始化声音开关状态
@@ -71,6 +74,11 @@ async function speakChinese(text: string) {
  */
 export async function feedbackSuccess() {
   console.log('[Feedback] feedbackSuccess 触发');
+  const now = Date.now();
+  if (now - lastSuccessFeedbackAt < SUCCESS_FEEDBACK_MIN_INTERVAL) {
+    return;
+  }
+  lastSuccessFeedbackAt = now;
   
   // 震动
   try {

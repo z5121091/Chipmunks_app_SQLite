@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   Modal,
   Platform,
@@ -64,6 +63,13 @@ interface ScanRecord {
   sourceNo?: string;
   // 自定义字段
   customFields?: Record<string, string>;
+}
+
+interface SavedInventorySummary {
+  model: string;
+  totalQty: number;
+  lastDate: string;
+  count: number;
 }
 
 // ========================================
@@ -170,6 +176,8 @@ export default function InventoryScreen() {
   const [inputValue, setInputValue] = useState('');
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scannerFocusBlockedRef = useRef(false);
   // 扫码队列 - 暂存处理中的新扫码
   const scanQueueRef = useRef<string[]>([]);
 
@@ -280,6 +288,40 @@ export default function InventoryScreen() {
   // Toast
   const { showToast, ToastContainer } = useToast();
 
+  useEffect(() => {
+    scannerFocusBlockedRef.current = (
+      showWarehousePicker ||
+      quantityModalVisible ||
+      savedModalVisible ||
+      saving
+    );
+  }, [quantityModalVisible, savedModalVisible, saving, showWarehousePicker]);
+
+  const focusScannerInput = useCallback((delay = 80) => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
+      if (!scannerFocusBlockedRef.current) {
+        inputRef.current?.focus();
+      }
+    }, delay);
+  }, []);
+
+  useEffect(() => () => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showWarehousePicker && !quantityModalVisible && !savedModalVisible && !saving) {
+      focusScannerInput(80);
+    }
+  }, [focusScannerInput, quantityModalVisible, savedModalVisible, saving, showWarehousePicker]);
+
   // 展开状态管理
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -350,7 +392,7 @@ export default function InventoryScreen() {
   // 页面聚焦时初始化和恢复数据
   useFocusEffect(
     useCallback(() => {
-      let focusTimer: NodeJS.Timeout | null = null;
+      let isActive = true;
       const init = async () => {
         // 1. 加载仓库列表（数据库已在 APP 启动时初始化）
         const list = await getAllWarehouses();
@@ -383,20 +425,20 @@ export default function InventoryScreen() {
         await loadSavedRecords(warehouse?.id);
 
         // 6. 聚焦输入框
-        focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
+        if (isActive) {
+          focusScannerInput(100);
+        }
       };
 
       init();
 
       return () => {
+        isActive = false;
         if (autoSubmitTimerRef.current) {
           clearTimeout(autoSubmitTimerRef.current);
         }
-        if (focusTimer) {
-          clearTimeout(focusTimer);
-        }
       };
-    }, [])
+    }, [focusScannerInput])
   );
 
   // 加载仓库
@@ -536,11 +578,11 @@ export default function InventoryScreen() {
           }
         } else {
           // 队列空了，重新聚焦输入框
-          inputRef.current?.focus();
+          focusScannerInput(0);
         }
       }, 0);
     }
-  }, [currentWarehouse, scanRecords, checkType]);
+  }, [checkType, currentWarehouse, focusScannerInput, scanRecords]);
 
   // 处理扫描（入口函数，清理换行符后调用）
   // 修复：防止 onChangeText 和 onSubmitEditing 重复触发
@@ -591,7 +633,7 @@ export default function InventoryScreen() {
           // 一维码过滤：不含分隔符的扫码静默忽略
           if (!isQRCode(code)) {
             setInputValue(''); // 清空输入框
-            inputRef.current?.focus(); // 重新聚焦
+            focusScannerInput(0);
             return;
           }
           setInputValue(''); // 清空输入框
@@ -603,7 +645,7 @@ export default function InventoryScreen() {
 
     // 输入框被清空时，更新状态
     setInputValue(text);
-  }, [processScan]);
+  }, [focusScannerInput, processScan]);
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
@@ -621,13 +663,13 @@ export default function InventoryScreen() {
     // 一维码过滤：不含分隔符的扫码静默忽略
     if (!isQRCode(code)) {
       setInputValue('');
-      inputRef.current?.focus();
+      focusScannerInput(0);
       return;
     }
 
     setInputValue('');
     processScan(code);
-  }, [inputValue, processScan]);
+  }, [focusScannerInput, inputValue, processScan]);
 
   // 选择仓库
   const selectWarehouse = async (wh: Warehouse) => {
@@ -641,7 +683,7 @@ export default function InventoryScreen() {
     await handleWarehouseChange(wh);
     setShowWarehousePicker(false);
     showToast(`已切换到 ${wh.name}`, 'success');
-    setTimeout(() => inputRef.current?.focus(), 100);
+    focusScannerInput(100);
   };
 
   // 打开数量修改弹窗
@@ -823,6 +865,15 @@ export default function InventoryScreen() {
     return groups;
   }, [savedRecords]);
 
+  const savedInventorySummary = useMemo<SavedInventorySummary[]>(() => (
+    Object.entries(savedGroupByModel).map(([model, data]) => ({
+      model,
+      totalQty: data.totalQty,
+      lastDate: data.lastDate,
+      count: data.count,
+    }))
+  ), [savedGroupByModel]);
+
   const inventoryListState = useMemo(
     () => `${[...expandedGroups].join('|')}::${checkType}`,
     [checkType, expandedGroups]
@@ -846,6 +897,20 @@ export default function InventoryScreen() {
       />
     );
   }, [checkType, expandedGroups, handleDeleteGroup, handleDeleteRecord, openQuantityModal, styles, theme, toggleExpand]);
+
+  const renderSavedInventoryItem = useCallback(({ item }: { item: SavedInventorySummary }) => (
+    <View style={styles.savedItem}>
+      <View style={styles.savedItemLeft}>
+        <Text style={styles.savedModel} numberOfLines={1}>{item.model}</Text>
+        <Text style={styles.savedDate}>{item.lastDate}</Text>
+      </View>
+      <View style={styles.savedItemRight}>
+        <Text style={styles.savedQty}>{item.totalQty} PCS</Text>
+      </View>
+    </View>
+  ), [styles]);
+
+  const savedInventoryKeyExtractor = useCallback((item: SavedInventorySummary) => item.model, []);
 
   const aggregatedRecordKeyExtractor = useCallback(
     (item: any) => `${item.model}|${item.version}`,
@@ -908,13 +973,16 @@ export default function InventoryScreen() {
         </View>
 
         {/* 扫码输入 + Toast（在同一个容器里） */}
-        <View style={styles.scanBox}>
+        <View style={[styles.scanBox, inputValue.length > 0 && styles.scanBoxActive]}>
           <TextInput
             ref={inputRef}
             style={styles.scanInput}
             value={inputValue}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
+            onBlur={() => focusScannerInput(120)}
+            placeholder="等待扫码"
+            placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
             autoFocus={false}
@@ -951,79 +1019,6 @@ export default function InventoryScreen() {
               </View>
             }
           />
-
-          {/* 原始代码（已注释，用于快速回滚） */}
-          {/* <ScrollView style={styles.list}>
-            {aggregatedRecords.map((item) => {
-              const key = `${item.model}|${item.version}`;
-              const isExpanded = expandedGroups.has(key);
-
-              return (
-                <View key={key} style={styles.itemContainer}>
-                  <TouchableOpacity style={styles.itemRow}
-                    activeOpacity={0.7} onPress={() => toggleExpand(key)}
-                    onLongPress={() => handleDeleteGroup(item)}
-                  >
-                    <View style={styles.itemLeft}>
-                      <TouchableOpacity style={styles.itemModelRow}
-                        activeOpacity={0.7} onPress={() => toggleExpand(key)}
-                      >
-                        <Text style={styles.itemModel}>
-                          {isExpanded ? '▼' : '▶'} {item.model}
-                        </Text>
-                      </TouchableOpacity>
-                      <Text style={styles.itemBatch}>
-                        版本: {item.version || '-'}
-                      </Text>
-                    </View>
-                    <View style={styles.itemRight}>
-                      {checkType === 'partial' ? (
-                        <>
-                          <View style={styles.quantityRow}>
-                            <Text style={styles.itemQtyLabel}>标签:</Text>
-                            <Text style={styles.itemQty}>{item.totalQuantity.toLocaleString()}</Text>
-                          </View>
-                          <TouchableOpacity style={styles.actualRow}
-                            activeOpacity={0.7} onPress={() => openQuantityModal(item.records[0])}
-                          >
-                            <Text style={styles.actualLabel}>实际:</Text>
-                            <Text style={styles.actualQty}>{item.actualTotalQuantity.toLocaleString()}</Text>
-                            <Feather name="edit-3" size={12} color={theme.accent} style={{ marginLeft: Spacing.xs }} />
-                          </TouchableOpacity>
-                        </>
-                      ) : (
-                        <Text style={styles.itemQty}>
-                          {item.totalQuantity.toLocaleString()}
-                        </Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-
-                  {isExpanded && (
-                    <View style={styles.detailsContainer}>
-                      {item.records.map((record) => (
-                        <TouchableOpacity
-                          key={record.id}
-                          style={styles.detailItem}
-                          onLongPress={() => handleDeleteRecord(record)}
-                          delayLongPress={500}
-                        >
-                          <Text style={styles.detailText}>
-                            批次: {record.batch || '-'}{record.productionDate ? `  |  生产日期: ${record.productionDate}` : ''}  |  数量: {record.quantity} PCS
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-            {scanRecords.length === 0 && (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>暂无扫描记录</Text>
-              </View>
-            )}
-          </ScrollView> */}
 
           {/* 操作按钮 */}
           {scanRecords.length > 0 && (
@@ -1147,24 +1142,21 @@ export default function InventoryScreen() {
                 </TouchableOpacity>
               </View>
               
-              {Object.keys(savedGroupByModel).length === 0 ? (
+              {savedInventorySummary.length === 0 ? (
                 <View style={styles.savedEmpty}>
                   <Text style={styles.savedEmptyText}>暂无盘点记录</Text>
                 </View>
               ) : (
-                <ScrollView style={styles.savedList}>
-                  {Object.entries(savedGroupByModel).map(([model, data]) => (
-                    <View key={model} style={styles.savedItem}>
-                      <View style={styles.savedItemLeft}>
-                        <Text style={styles.savedModel}>{model}</Text>
-                        <Text style={styles.savedDate}>{data.lastDate}</Text>
-                      </View>
-                      <View style={styles.savedItemRight}>
-                        <Text style={styles.savedQty}>{data.totalQty} PCS</Text>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
+                <FlatList
+                  data={savedInventorySummary}
+                  keyExtractor={savedInventoryKeyExtractor}
+                  renderItem={renderSavedInventoryItem}
+                  style={styles.savedList}
+                  keyboardShouldPersistTaps="handled"
+                  initialNumToRender={12}
+                  maxToRenderPerBatch={16}
+                  windowSize={7}
+                />
               )}
             </View>
           </TouchableOpacity>

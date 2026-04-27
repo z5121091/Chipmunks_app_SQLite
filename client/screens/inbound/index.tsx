@@ -3,13 +3,11 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   ActivityIndicator,
   Alert,
   Modal,
   FlatList,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -64,6 +62,13 @@ interface ScanRecord {
   customFields?: Record<string, string>;
   // 是否已确认
   confirmed?: boolean;
+}
+
+interface SavedInboundSummary {
+  key: string;
+  model: string;
+  version: string;
+  totalQty: number;
 }
 
 // ========================================
@@ -165,6 +170,8 @@ export default function InboundScreen() {
   const [inputValue, setInputValue] = useState('');
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scannerFocusBlockedRef = useRef(false);
   // 扫码队列 - 暂存处理中的新扫码
   const scanQueueRef = useRef<string[]>([]);
   // 防抖相关
@@ -198,6 +205,35 @@ export default function InboundScreen() {
 
   // Toast
   const { showToast, ToastContainer } = useToast();
+
+  useEffect(() => {
+    scannerFocusBlockedRef.current = showWarehousePicker || savedInboundModalVisible || saving;
+  }, [savedInboundModalVisible, saving, showWarehousePicker]);
+
+  const focusScannerInput = useCallback((delay = 80) => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
+      if (!scannerFocusBlockedRef.current) {
+        inputRef.current?.focus();
+      }
+    }, delay);
+  }, []);
+
+  useEffect(() => () => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showWarehousePicker && !savedInboundModalVisible && !saving) {
+      focusScannerInput(80);
+    }
+  }, [focusScannerInput, savedInboundModalVisible, saving, showWarehousePicker]);
 
   // 展开状态管理
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -312,7 +348,7 @@ export default function InboundScreen() {
   // 页面聚焦时初始化和恢复数据
   useFocusEffect(
     useCallback(() => {
-      let focusTimer: NodeJS.Timeout | null = null;
+      let isActive = true;
       const init = async () => {
         // 1. 加载仓库列表（数据库已在 APP 启动时初始化）
         const list = await getAllWarehouses();
@@ -350,16 +386,16 @@ export default function InboundScreen() {
         }
 
         // 7. 聚焦输入框
-        focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
+        if (isActive) {
+          focusScannerInput(100);
+        }
       };
       init();
 
       return () => {
-        if (focusTimer) {
-          clearTimeout(focusTimer);
-        }
+        isActive = false;
       };
-    }, [])
+    }, [focusScannerInput])
   );
 
   // 加载仓库
@@ -551,11 +587,11 @@ export default function InboundScreen() {
           }
         } else {
           // 队列空了，重新聚焦输入框
-          inputRef.current?.focus();
+          focusScannerInput(0);
         }
       }, 0);
     }
-  }, [currentWarehouse, currentSupplier, scanRecords]);
+  }, [currentWarehouse, currentSupplier, focusScannerInput, scanRecords]);
 
   // 处理扫描（入口函数，清理换行符后调用）
   // 修复：防止 onChangeText 和 onSubmitEditing 重复触发
@@ -606,7 +642,7 @@ export default function InboundScreen() {
           // 一维码过滤：不含分隔符的扫码静默忽略
           if (!isQRCode(code)) {
             setInputValue(''); // 清空输入框
-            inputRef.current?.focus(); // 重新聚焦
+            focusScannerInput(0);
             return;
           }
           setInputValue(''); // 清空输入框
@@ -618,7 +654,7 @@ export default function InboundScreen() {
 
     // 输入框被清空时，更新状态
     setInputValue(text);
-  }, [processScan]);
+  }, [focusScannerInput, processScan]);
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
@@ -636,13 +672,13 @@ export default function InboundScreen() {
     // 一维码过滤：不含分隔符的扫码静默忽略
     if (!isQRCode(code)) {
       setInputValue('');
-      inputRef.current?.focus();
+      focusScannerInput(0);
       return;
     }
 
     setInputValue('');
     processScan(code);
-  }, [inputValue, processScan]);
+  }, [focusScannerInput, inputValue, processScan]);
 
   // 选择仓库
   const selectWarehouse = async (wh: Warehouse) => {
@@ -656,7 +692,7 @@ export default function InboundScreen() {
     await handleWarehouseChange(wh);
     setShowWarehousePicker(false);
     showToast(`已切换到 ${wh.name}`, 'success');
-    setTimeout(() => inputRef.current?.focus(), 100);
+    focusScannerInput(100);
   };
 
   // 确认入库
@@ -893,6 +929,18 @@ export default function InboundScreen() {
     return groups;
   }, [savedInboundRecords]);
 
+  const savedInboundSummary = useMemo<SavedInboundSummary[]>(() => (
+    Object.entries(savedGroupByModel).map(([key, data]) => {
+      const [model, version] = key.split('|');
+      return {
+        key,
+        model,
+        version: version || '-',
+        totalQty: data.totalQty,
+      };
+    })
+  ), [savedGroupByModel]);
+
   const inboundListState = useMemo(
     () => `${[...expandedGroups].join('|')}::${[...confirmedGroups].join('|')}`,
     [expandedGroups, confirmedGroups]
@@ -917,6 +965,20 @@ export default function InboundScreen() {
       />
     );
   }, [confirmedGroups, expandedGroups, handleDeleteGroup, handleDeleteRecord, styles, theme, toggleConfirm, toggleExpand]);
+
+  const renderSavedInboundItem = useCallback(({ item }: { item: SavedInboundSummary }) => (
+    <View style={styles.savedItem}>
+      <View style={styles.savedItemLeft}>
+        <Text style={styles.savedModel} numberOfLines={1}>{item.model}</Text>
+        <Text style={styles.savedVersion}>版本: {item.version}</Text>
+      </View>
+      <View style={styles.savedItemRight}>
+        <Text style={styles.savedQty}>{item.totalQty} PCS</Text>
+      </View>
+    </View>
+  ), [styles]);
+
+  const savedInboundKeyExtractor = useCallback((item: SavedInboundSummary) => item.key, []);
 
   const aggregatedRecordKeyExtractor = useCallback(
     (item: any) => `${item.model}|${item.version}`,
@@ -973,6 +1035,7 @@ export default function InboundScreen() {
             value={inputValue}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
+            onBlur={() => focusScannerInput(120)}
             placeholder="等待扫码"
             placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
@@ -1082,27 +1145,21 @@ export default function InboundScreen() {
                 </TouchableOpacity>
               </View>
 
-              {Object.keys(savedGroupByModel).length === 0 ? (
+              {savedInboundSummary.length === 0 ? (
                 <View style={styles.savedEmpty}>
                   <Text style={styles.savedEmptyText}>暂无入库记录</Text>
                 </View>
               ) : (
-                <ScrollView style={styles.savedList}>
-                  {Object.entries(savedGroupByModel).map(([key, data]) => {
-                    const [model, version] = key.split('|');
-                    return (
-                      <View key={key} style={styles.savedItem}>
-                        <View style={styles.savedItemLeft}>
-                          <Text style={styles.savedModel}>{model}</Text>
-                          <Text style={styles.savedVersion}>版本: {version || '-'}</Text>
-                        </View>
-                        <View style={styles.savedItemRight}>
-                          <Text style={styles.savedQty}>{data.totalQty} PCS</Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
+                <FlatList
+                  data={savedInboundSummary}
+                  keyExtractor={savedInboundKeyExtractor}
+                  renderItem={renderSavedInboundItem}
+                  contentContainerStyle={styles.savedList}
+                  keyboardShouldPersistTaps="handled"
+                  initialNumToRender={12}
+                  maxToRenderPerBatch={16}
+                  windowSize={7}
+                />
               )}
             </View>
           </TouchableOpacity>

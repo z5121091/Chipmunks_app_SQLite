@@ -115,13 +115,18 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   // 扫码框（包含输入框和 Toast）
   scanBox: {
     marginHorizontal: Spacing.sm,
-    marginTop: Spacing.md,
-    height: rf(56),
+    marginTop: Spacing.sm,
+    height: rf(60),
     backgroundColor: theme.backgroundDefault,
     borderWidth: 2,
     borderColor: theme.primary,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden', // 隐藏超出的内容
+  },
+
+  scanBoxActive: {
+    borderColor: theme.success,
+    backgroundColor: withAlpha(theme.success, 0.06),
   },
 
   scanInput: {
@@ -328,6 +333,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
 
   clearBtn: {
     flex: 1,
+    minHeight: rf(56),
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     backgroundColor: theme.backgroundTertiary,
@@ -342,6 +348,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
 
   submitBtn: {
     flex: 1,
+    minHeight: rf(56),
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     backgroundColor: theme.primary,
