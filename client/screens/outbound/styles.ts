@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 import { withAlpha } from '@/utils/colors';
-import { Spacing, BorderRadius, Theme } from '@/constants/theme';
+import { Spacing, BorderRadius, Theme, Typography } from '@/constants/theme';
 import { rf } from '@/utils/responsive';
 
 export const createStyles = (theme: Theme) => StyleSheet.create({
@@ -29,8 +29,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   headerTitle: {
-    fontSize: rf(18),
-    fontWeight: '700',
+    ...Typography.h4,
     color: theme.textPrimary,
   },
 
@@ -54,13 +53,14 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.backgroundTertiary,
     borderRadius: BorderRadius.sm,
     minWidth: 80,
+    minHeight: 40,
   },
 
   warehouseText: {
-    fontSize: rf(12),
-    fontWeight: '500',
+    ...Typography.captionMedium,
     color: theme.textPrimary,
-    maxWidth: 70,
+    maxWidth: 96,
+    flexShrink: 1,
   },
 
   orderTag: {
@@ -69,6 +69,8 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     backgroundColor: theme.backgroundTertiary,
     borderRadius: BorderRadius.sm,
+    minHeight: 40,
+    justifyContent: 'center',
   },
 
   orderTagActive: {
@@ -76,8 +78,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   orderText: {
-    fontSize: rf(16),
-    fontWeight: '600',
+    ...Typography.bodyMedium,
     color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: 0.5,
@@ -104,8 +105,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     height: '100%',
     backgroundColor: 'transparent', // 透明，让容器背景显示
     paddingHorizontal: Spacing.lg,
-    fontSize: rf(18),
-    fontWeight: '500',
+    ...Typography.h4,
     color: theme.textPrimary,
     textAlign: 'center',
   },
@@ -123,9 +123,8 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   toastError: { backgroundColor: theme.error },
 
   toastText: {
+    ...Typography.bodyMedium,
     color: theme.white,
-    fontSize: rf(16),
-    fontWeight: '600',
     textAlign: 'center',
   },
 
@@ -147,19 +146,26 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   listTitle: {
-    fontSize: rf(13),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.textSecondary,
   },
 
   listCount: {
-    fontSize: rf(13),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.primary,
   },
 
   list: {
     flex: 1,
+  },
+
+  listContent: {
+    paddingBottom: Spacing.md,
+  },
+
+  listEmptyContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
 
   // 聚合项容器
@@ -183,13 +189,12 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   itemModel: {
-    fontSize: rf(14),
-    fontWeight: '600',
+    ...Typography.smallMedium,
     color: theme.textPrimary,
   },
 
   itemBatch: {
-    fontSize: rf(12),
+    ...Typography.caption,
     color: theme.textSecondary,
     marginTop: 1,
   },
@@ -199,13 +204,13 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   itemQty: {
-    fontSize: rf(16),
+    ...Typography.title,
     fontWeight: '700',
     color: theme.primary,
   },
 
   itemTime: {
-    fontSize: rf(10),
+    ...Typography.caption,
     color: theme.textMuted,
     marginTop: 1,
   },
@@ -230,9 +235,9 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   detailText: {
-    fontSize: rf(12),
+    ...Typography.caption,
     color: theme.textSecondary,
-    lineHeight: 18,
+    lineHeight: Typography.small.lineHeight,
   },
 
   empty: {
@@ -241,7 +246,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   emptyText: {
-    fontSize: rf(16),
+    ...Typography.body,
     color: theme.textMuted,
   },
 

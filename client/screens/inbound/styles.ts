@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { Spacing, BorderRadius, Theme } from '@/constants/theme';
+import { Spacing, BorderRadius, Theme, Typography } from '@/constants/theme';
 import { withAlpha } from '@/utils/colors';
 import { rf } from '@/utils/responsive';
 
@@ -29,8 +29,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   headerTitle: {
-    fontSize: rf(18),
-    fontWeight: '700',
+    ...Typography.h4,
     color: theme.textPrimary,
   },
 
@@ -54,13 +53,14 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.backgroundTertiary,
     borderRadius: BorderRadius.sm,
     minWidth: 80,
+    minHeight: 40,
   },
 
   warehouseText: {
-    fontSize: rf(12),
-    fontWeight: '500',
+    ...Typography.captionMedium,
     color: theme.textPrimary,
-    maxWidth: 70,
+    maxWidth: 96,
+    flexShrink: 1,
   },
 
   supplierTag: {
@@ -73,6 +73,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     backgroundColor: theme.backgroundTertiary,
     borderRadius: BorderRadius.sm,
+    minHeight: 40,
   },
 
   supplierTagActive: {
@@ -80,10 +81,10 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   supplierText: {
-    fontSize: rf(16),
-    fontWeight: '600',
+    ...Typography.bodyMedium,
     color: theme.textPrimary,
     textAlign: 'center',
+    flexShrink: 1,
   },
 
   supplierTextActive: {
@@ -107,8 +108,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     height: '100%',
     backgroundColor: 'transparent',
     paddingHorizontal: Spacing.lg,
-    fontSize: rf(18),
-    fontWeight: '500',
+    ...Typography.h4,
     color: theme.textPrimary,
     textAlign: 'center',
   },
@@ -126,9 +126,8 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   toastError: { backgroundColor: theme.error },
 
   toastText: {
+    ...Typography.bodyMedium,
     color: theme.white,
-    fontSize: rf(16),
-    fontWeight: '600',
     textAlign: 'center',
   },
 
@@ -145,8 +144,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   inboundNoText: {
-    fontSize: rf(12),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.textPrimary,
     marginRight: Spacing.xs,
   },
@@ -169,19 +167,26 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   listTitle: {
-    fontSize: rf(13),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.textSecondary,
   },
 
   listCount: {
-    fontSize: rf(13),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.primary,
   },
 
   list: {
     flex: 1,
+  },
+
+  listContent: {
+    paddingBottom: Spacing.md,
+  },
+
+  listEmptyContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
 
   // 空状态
@@ -193,7 +198,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   emptyText: {
-    fontSize: rf(16),
+    ...Typography.body,
     color: theme.textMuted,
     marginTop: Spacing.md,
   },
@@ -208,7 +213,7 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
 
   itemTime: {
-    fontSize: rf(10),
+    ...Typography.caption,
     color: theme.textMuted,
     marginTop: 1,
   },
@@ -247,21 +252,20 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
 
   // 型号文字
   itemModel: {
-    fontSize: rf(14),
-    fontWeight: '600',
+    ...Typography.smallMedium,
     color: theme.textPrimary,
   },
 
   // 版本号（第二行）
   itemBatch: {
-    fontSize: rf(12),
+    ...Typography.caption,
     color: theme.textSecondary,
     marginTop: 1,
   },
 
   // 数量（右侧）
   itemQty: {
-    fontSize: rf(16),
+    ...Typography.title,
     fontWeight: '700',
     color: theme.primary,
     marginLeft: Spacing.sm,
@@ -293,8 +297,9 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
 
   // 明细文本
   detailText: {
-    fontSize: rf(12),
+    ...Typography.caption,
     color: theme.textSecondary,
+    lineHeight: Typography.small.lineHeight,
   },
 
   // 操作按钮
@@ -407,11 +412,11 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     backgroundColor: theme.backgroundTertiary,
     borderRadius: BorderRadius.sm,
+    minHeight: 40,
   },
 
   savedBtnText: {
-    fontSize: rf(12),
-    fontWeight: '600',
+    ...Typography.captionMedium,
     color: theme.textPrimary,
   },
 

@@ -3,7 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
   TextInput,
   Alert,
   Platform,
@@ -713,6 +713,27 @@ export default function PDAScanScreen() {
     return Array.from(map.values());
   }, [scanRecords]);
 
+  const outboundListState = useMemo(
+    () => Array.from(expandedGroups).sort().join('|'),
+    [expandedGroups]
+  );
+
+  const renderAggregatedGroup = useCallback(({ item }: { item: AggregatedGroup }) => {
+    const isExpanded = expandedGroups.has(item.key);
+    return (
+      <RecordItem
+        group={item}
+        isExpanded={isExpanded}
+        onToggle={toggleExpand}
+        onDeleteGroup={handleDeleteGroup}
+        onDeleteItem={handleDeleteItem}
+        styles={styles}
+      />
+    );
+  }, [expandedGroups, orderNo, styles]);
+
+  const aggregatedGroupKeyExtractor = useCallback((item: AggregatedGroup) => item.key, []);
+
   // 切换展开/折叠
   const toggleExpand = (key: string) => {
     setExpandedGroups(prev => {
@@ -930,7 +951,9 @@ export default function PDAScanScreen() {
             <FontAwesome6 name="chevron-down" size={10} color={theme.textMuted} />
           </TouchableOpacity>
           <View style={[styles.orderTag, orderNo && styles.orderTagActive]}>
-            <Text style={[styles.orderText, orderNo && styles.orderTextActive]}>{orderNo || '待扫描订单'}</Text>
+            <Text style={[styles.orderText, orderNo && styles.orderTextActive]} numberOfLines={1}>
+              {orderNo || '待扫描订单'}
+            </Text>
           </View>
         </View>
 
@@ -958,27 +981,24 @@ export default function PDAScanScreen() {
             <Text style={styles.listTitle}>物料列表</Text>
             <Text style={styles.listCount}>共 {materialCount} 条</Text>
           </View>
-          <ScrollView style={styles.list}>
-            {aggregateMaterials.map(group => {
-              const isExpanded = expandedGroups.has(group.key);
-              return (
-                <RecordItem
-                  key={group.key}
-                  group={group}
-                  isExpanded={isExpanded}
-                  onToggle={toggleExpand}
-                  onDeleteGroup={handleDeleteGroup}
-                  onDeleteItem={handleDeleteItem}
-                  styles={styles}
-                />
-              );
-            })}
-            {scanRecords.length === 0 && (
+          <FlatList
+            data={aggregateMaterials}
+            keyExtractor={aggregatedGroupKeyExtractor}
+            renderItem={renderAggregatedGroup}
+            extraData={outboundListState}
+            style={styles.list}
+            contentContainerStyle={scanRecords.length === 0 ? styles.listEmptyContent : styles.listContent}
+            initialNumToRender={12}
+            maxToRenderPerBatch={16}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyText}>暂无物料</Text>
               </View>
-            )}
-          </ScrollView>
+            }
+          />
 
           {/* 原始代码（已注释，用于快速回滚） */}
           {/* <ScrollView style={styles.list}>

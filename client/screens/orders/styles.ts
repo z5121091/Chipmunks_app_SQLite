@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { Spacing, BorderRadius, Theme, BorderWidth } from '@/constants/theme';
+import { Spacing, BorderRadius, Theme, BorderWidth, Typography } from '@/constants/theme';
 import { rs, rf } from '@/utils/responsive';
 import { withAlpha } from '@/utils/colors';
 
@@ -30,12 +30,11 @@ export const createStyles = (theme: Theme) => {
       flex: 1,
     },
     title: {
-      fontSize: rf(18),
-      fontWeight: '700',
+      ...Typography.h4,
       color: theme.textPrimary,
     },
     subtitle: {
-      fontSize: rf(12),
+      ...Typography.caption,
       color: theme.textSecondary,
       marginTop: 1,
     },
@@ -49,18 +48,23 @@ export const createStyles = (theme: Theme) => {
       borderColor: theme.border,
       paddingHorizontal: Spacing.sm,
       marginBottom: Spacing.sm,
+      minHeight: 44,
     },
     searchIcon: {
       marginRight: Spacing.xs,
     },
     searchInput: {
       flex: 1,
-      fontSize: rf(13),
+      ...Typography.body,
       color: theme.textPrimary,
       paddingVertical: Spacing.xs + 2,
     },
     searchClear: {
       padding: Spacing.xs,
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     // 仓库选择器 + 搜索类型选择器（横向排列）
     filterRow: {
@@ -78,10 +82,10 @@ export const createStyles = (theme: Theme) => {
       backgroundColor: theme.backgroundDefault,
       borderWidth: BorderWidth.normal,
       borderColor: theme.primary,
+      minHeight: 40,
     },
     warehouseBtnText: {
-      fontSize: rf(11),
-      fontWeight: '600',
+      ...Typography.captionMedium,
       color: theme.primary,
       marginLeft: Spacing.xs,
     },
@@ -97,6 +101,7 @@ export const createStyles = (theme: Theme) => {
       backgroundColor: theme.backgroundDefault,
       borderWidth: BorderWidth.normal,
       borderColor: theme.border,
+      minHeight: 40,
     },
     searchTypeBtnIcon: {
       marginRight: 2,
@@ -106,8 +111,7 @@ export const createStyles = (theme: Theme) => {
       borderColor: theme.primary,
     },
     searchTypeText: {
-      fontSize: rf(11),
-      fontWeight: '500',
+      ...Typography.captionMedium,
       color: theme.textSecondary,
     },
     searchTypeTextActive: {
@@ -126,16 +130,15 @@ export const createStyles = (theme: Theme) => {
       marginBottom: Spacing.xs,
     },
     statsOverviewText: {
-      fontSize: rf(11),
+      ...Typography.caption,
       color: theme.textMuted,
     },
     statsOverviewNum: {
-      fontSize: rf(13),
-      fontWeight: '700',
+      ...Typography.smallMedium,
       color: theme.textPrimary,
     },
     statsOverviewDivider: {
-      fontSize: rf(11),
+      ...Typography.caption,
       color: theme.border,
       marginHorizontal: Spacing.xs,
     },
@@ -153,12 +156,12 @@ export const createStyles = (theme: Theme) => {
       alignItems: 'center',
     },
     statNumber: {
-      fontSize: rf(20),
+      ...Typography.h3,
       fontWeight: '700',
       color: theme.textPrimary,
     },
     statLabel: {
-      fontSize: rf(10),
+      ...Typography.caption,
       color: theme.textMuted,
       marginTop: 1,
     },
@@ -173,12 +176,11 @@ export const createStyles = (theme: Theme) => {
       marginBottom: Spacing.xs,
     },
     sectionTitle: {
-      fontSize: rf(13),
-      fontWeight: '600',
+      ...Typography.smallMedium,
       color: theme.textPrimary,
     },
     sectionTip: {
-      fontSize: rf(10),
+      ...Typography.caption,
       color: theme.textMuted,
     },
     orderItem: {
@@ -196,14 +198,13 @@ export const createStyles = (theme: Theme) => {
       marginBottom: Spacing.xs,
     },
     orderNo: {
-      fontSize: rf(13),
-      fontWeight: '600',
+      ...Typography.smallMedium,
       color: theme.textPrimary,
       flex: 1,
       marginRight: Spacing.xs,
     },
     orderDate: {
-      fontSize: rf(10),
+      ...Typography.caption,
       color: theme.textMuted,
     },
     orderContent: {
@@ -215,11 +216,11 @@ export const createStyles = (theme: Theme) => {
       flex: 1,
     },
     customerName: {
-      fontSize: rf(12),
+      ...Typography.captionMedium,
       color: theme.textSecondary,
     },
     noCustomer: {
-      fontSize: rf(12),
+      ...Typography.caption,
       color: theme.textMuted,
       fontStyle: 'italic',
     },
@@ -231,10 +232,10 @@ export const createStyles = (theme: Theme) => {
       backgroundColor: withAlpha(theme.primary, 0.06),
       borderRadius: BorderRadius.sm,
       gap: 3,
+      minHeight: 36,
     },
     editBtnText: {
-      fontSize: rf(11),
-      fontWeight: '600',
+      ...Typography.captionMedium,
       color: theme.primary,
     },
     orderItemExpanded: {

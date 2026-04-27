@@ -1169,6 +1169,47 @@ const performDatabaseInitialization = async (): Promise<void> => {
 
     await migrateInboundAndInventoryRecordTables(db);
 
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_orders_warehouse_created
+      ON orders (warehouse_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_materials_order_warehouse
+      ON materials (order_no, warehouse_id);
+
+      CREATE INDEX IF NOT EXISTS idx_materials_trace_warehouse
+      ON materials (traceNo, warehouse_id);
+
+      CREATE INDEX IF NOT EXISTS idx_materials_batch_warehouse
+      ON materials (batch, warehouse_id);
+
+      CREATE INDEX IF NOT EXISTS idx_materials_model_warehouse
+      ON materials (model, warehouse_id);
+
+      CREATE INDEX IF NOT EXISTS idx_materials_operation_warehouse_scanned
+      ON materials (operation_type, warehouse_id, scanned_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_unpack_records_order_warehouse
+      ON unpack_records (order_no, warehouse_id);
+
+      CREATE INDEX IF NOT EXISTS idx_unpack_records_original_material
+      ON unpack_records (original_material_id);
+
+      CREATE INDEX IF NOT EXISTS idx_inbound_records_no
+      ON inbound_records (inbound_no);
+
+      CREATE INDEX IF NOT EXISTS idx_inbound_records_warehouse_created
+      ON inbound_records (warehouse_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_inventory_check_records_no
+      ON inventory_check_records (check_no);
+
+      CREATE INDEX IF NOT EXISTS idx_inventory_check_records_warehouse_created
+      ON inventory_check_records (warehouse_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_inbound_summary_warehouse_date
+      ON inbound_summary (warehouse_id, in_date DESC);
+    `);
+
     // 初始化默认数据
     const isoDateTime = getISODateTime();
 

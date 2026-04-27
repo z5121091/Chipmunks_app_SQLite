@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -891,6 +892,36 @@ export default function InboundScreen() {
     return groups;
   }, [savedInboundRecords]);
 
+  const inboundListState = useMemo(
+    () => `${[...expandedGroups].join('|')}::${[...confirmedGroups].join('|')}`,
+    [expandedGroups, confirmedGroups]
+  );
+
+  const renderAggregatedRecord = useCallback(({ item }: { item: any }) => {
+    const key = `${item.model}|${item.version}`;
+    const isExpanded = expandedGroups.has(key);
+    const isConfirmed = confirmedGroups.has(key);
+
+    return (
+      <RecordItem
+        item={item}
+        isExpanded={isExpanded}
+        isConfirmed={isConfirmed}
+        onToggle={toggleExpand}
+        onConfirm={toggleConfirm}
+        onDeleteGroup={handleDeleteGroup}
+        onDeleteRecord={handleDeleteRecord}
+        theme={theme}
+        styles={styles}
+      />
+    );
+  }, [confirmedGroups, expandedGroups, handleDeleteGroup, handleDeleteRecord, styles, theme, toggleConfirm, toggleExpand]);
+
+  const aggregatedRecordKeyExtractor = useCallback(
+    (item: any) => `${item.model}|${item.version}`,
+    []
+  );
+
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <View style={styles.container}>
@@ -927,7 +958,7 @@ export default function InboundScreen() {
               size={12} 
               color={scanRecords.length > 0 ? theme.white : theme.textMuted} 
             />
-            <Text style={[styles.supplierText, scanRecords.length > 0 && styles.supplierTextActive]}>
+            <Text style={[styles.supplierText, scanRecords.length > 0 && styles.supplierTextActive]} numberOfLines={1}>
               {currentSupplier || (scanRecords.length > 0 ? `${Str.inboundScanned} ${scanRecords.length} ${Str.inboundRecords}` : Str.labelSupplier)}
             </Text>
           </View>
@@ -960,33 +991,24 @@ export default function InboundScreen() {
               {confirmedCount > 0 && ` / 已确认 ${confirmedCount}`}
             </Text>
           </View>
-          <ScrollView style={styles.list}>
-            {aggregatedRecords.map((item) => {
-              const key = `${item.model}|${item.version}`;
-              const isExpanded = expandedGroups.has(key);
-              const isConfirmed = confirmedGroups.has(key);
-
-              return (
-                <RecordItem
-                  key={key}
-                  item={item}
-                  isExpanded={isExpanded}
-                  isConfirmed={isConfirmed}
-                  onToggle={toggleExpand}
-                  onConfirm={toggleConfirm}
-                  onDeleteGroup={handleDeleteGroup}
-                  onDeleteRecord={handleDeleteRecord}
-                  theme={theme}
-                  styles={styles}
-                />
-              );
-            })}
-            {scanRecords.length === 0 && (
+          <FlatList
+            style={styles.list}
+            contentContainerStyle={aggregatedRecords.length === 0 ? styles.listEmptyContent : styles.listContent}
+            data={aggregatedRecords}
+            renderItem={renderAggregatedRecord}
+            keyExtractor={aggregatedRecordKeyExtractor}
+            extraData={inboundListState}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={12}
+            maxToRenderPerBatch={16}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyText}>暂无扫描记录</Text>
               </View>
-            )}
-          </ScrollView>
+            }
+          />
 
           {/* 原始代码（已注释，用于快速回滚） */}
           {/* <ScrollView style={styles.list}>

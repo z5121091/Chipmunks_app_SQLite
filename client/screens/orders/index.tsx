@@ -129,6 +129,7 @@ export default function OrdersScreen() {
   // 标记是否需要自动展开订单（从拆包跳转过来）
   const pendingExpandOrderNo = useRef<string | null>(null);
   const pendingMaterialId = useRef<number | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // 同步 ref
   useEffect(() => {
@@ -377,7 +378,15 @@ export default function OrdersScreen() {
   }, []);
   
   // 筛选订单（根据仓库和时间）
-  const filterOrdersByWarehouseAndTime = useCallback((allOrders: Order[], warehouseId?: string): Order[] => {
+  const sortOrdersDescending = useCallback((list: Order[]) => (
+    [...list].sort((a, b) => b.order_no.localeCompare(a.order_no, undefined, { numeric: true }))
+  ), []);
+
+  const filterOrdersByWarehouseAndTime = useCallback((
+    allOrders: Order[],
+    warehouseId?: string,
+    timeFilterValue: TimeFilterType = timeFilter
+  ): Order[] => {
     let filtered = allOrders;
 
     // 按仓库筛选（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
@@ -388,16 +397,16 @@ export default function OrdersScreen() {
     
     // 按时间筛选（使用订单号日期判断）
     const today = getTodayLocal();
-    if (timeFilter === 'today') {
+    if (timeFilterValue === 'today') {
       filtered = filtered.filter(o => extractDateFromOrderNo(o.order_no) === today);
-    } else if (timeFilter === 'threeDays') {
+    } else if (timeFilterValue === 'threeDays') {
       // 近三天：订单号日期 = 今天 或 昨天 或 前天
       filtered = filtered.filter(o => {
         const orderDate = extractDateFromOrderNo(o.order_no);
         const diff = getDaysDiff(orderDate, today);
         return diff === 0 || diff === -1 || diff === -2;
       });
-    } else if (timeFilter === 'sevenDays') {
+    } else if (timeFilterValue === 'sevenDays') {
       // 近七天：订单号日期 = 今天到7天前
       filtered = filtered.filter(o => {
         const orderDate = extractDateFromOrderNo(o.order_no);
@@ -411,6 +420,53 @@ export default function OrdersScreen() {
   }, [currentWarehouse, timeFilter]);
   
   // 计算统计数据
+  const runOrderSearch = useCallback(async ({
+    text,
+    type = searchType,
+    allOrders = orders,
+    warehouseId = currentWarehouse?.id,
+    timeFilterValue = timeFilter,
+  }: {
+    text: string;
+    type?: SearchType;
+    allOrders?: Order[];
+    warehouseId?: string;
+    timeFilterValue?: TimeFilterType;
+  }) => {
+    const normalizedText = text.trim();
+    const baseOrders = filterOrdersByWarehouseAndTime(allOrders, warehouseId, timeFilterValue);
+
+    if (!normalizedText) {
+      return baseOrders;
+    }
+
+    const lowerText = normalizedText.toLowerCase();
+
+    if (type === 'batch') {
+      try {
+        const materials = await searchMaterials({
+          batch: normalizedText,
+          warehouse_id: warehouseId,
+        });
+        const orderNos = new Set(materials.map(m => m.order_no));
+        return sortOrdersDescending(baseOrders.filter(order => orderNos.has(order.order_no)));
+      } catch (error) {
+        console.error('批次搜索失败:', error);
+        return [];
+      }
+    }
+
+    if (type === 'customer') {
+      return sortOrdersDescending(baseOrders.filter(order =>
+        order.customer_name && order.customer_name.toLowerCase().includes(lowerText)
+      ));
+    }
+
+    return sortOrdersDescending(baseOrders.filter(order =>
+      order.order_no.toLowerCase().includes(lowerText)
+    ));
+  }, [currentWarehouse?.id, filterOrdersByWarehouseAndTime, orders, searchType, sortOrdersDescending, timeFilter]);
+
   const calculateStats = useCallback(async (allOrders: Order[], allMaterials: MaterialRecord[], warehouseId?: string) => {
     // 筛选当前仓库的物料（使用 warehouse_id，避免仓库名称变更导致历史数据"消失"）
     let warehouseMaterials = allMaterials;
@@ -510,14 +566,18 @@ export default function OrdersScreen() {
       ]);
       
       // 按订单号从大到小排序
-      const sortedOrders = [...ordersData].sort((a, b) => 
-        b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-      );
+      const sortedOrders = sortOrdersDescending(ordersData);
       
       setOrders(sortedOrders);
       
       // 根据仓库和时间筛选
-      const filtered = filterOrdersByWarehouseAndTime(sortedOrders);
+      const filtered = await runOrderSearch({
+        text: searchText,
+        type: searchType,
+        allOrders: sortedOrders,
+        warehouseId: currentWarehouse?.id,
+        timeFilterValue: timeFilter,
+      });
       setFilteredOrders(filtered);
       
       // 计算统计数据
@@ -536,7 +596,7 @@ export default function OrdersScreen() {
     } catch (error) {
       console.error('加载数据失败:', error);
     }
-  }, [filterOrdersByWarehouseAndTime, calculateStats]);
+  }, [calculateStats, currentWarehouse?.id, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
   
   // 搜索过滤
   const handleSearch = useCallback(async (text: string) => {
@@ -588,12 +648,43 @@ export default function OrdersScreen() {
   // 搜索类型变更时重新搜索
   const handleSearchTypeChange = useCallback((type: SearchType) => {
     setSearchType(type);
-    if (searchText.trim()) {
-      handleSearch(searchText);
-    }
-  }, [searchText, handleSearch]);
+  }, []);
 
   // 使用 ref 存储 loadData 函数的最新引用，避免 useFocusEffect 依赖变化导致无限循环
+  const handleSearchInput = useCallback((text: string) => {
+    setSearchText(text);
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      runOrderSearch({
+        text: searchText,
+        type: searchType,
+        allOrders: orders,
+        warehouseId: currentWarehouse?.id,
+        timeFilterValue: timeFilter,
+      }).then(result => {
+        if (isActive) {
+          setFilteredOrders(result);
+        }
+      });
+    }, searchType === 'batch' ? 220 : 120);
+
+    return () => {
+      isActive = false;
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+    };
+  }, [currentWarehouse?.id, orders, runOrderSearch, searchText, searchType, timeFilter]);
+
   const loadDataRef = useRef(loadData);
   
   // 保持 loadDataRef 与 loadData 同步
@@ -640,14 +731,18 @@ export default function OrdersScreen() {
     ]);
 
     // 按订单号从大到小排序
-    const sortedOrders = [...ordersData].sort((a, b) =>
-      b.order_no.localeCompare(a.order_no, undefined, { numeric: true })
-    );
+    const sortedOrders = sortOrdersDescending(ordersData);
 
     setOrders(sortedOrders);
 
     // 根据仓库和时间筛选（传入新仓库的 ID）
-    const filtered = filterOrdersByWarehouseAndTime(sortedOrders, warehouse.id);
+    const filtered = await runOrderSearch({
+      text: searchText,
+      type: searchType,
+      allOrders: sortedOrders,
+      warehouseId: warehouse.id,
+      timeFilterValue: timeFilter,
+    });
     setFilteredOrders(filtered);
 
     // 计算统计数据（传入新仓库的 ID）
@@ -657,7 +752,7 @@ export default function OrdersScreen() {
     // 清空展开的订单（因为仓库切换后物料列表可能为空）
     setExpandedOrderId(null);
     setExpandedMaterials([]);
-  }, [currentWarehouse, filterOrdersByWarehouseAndTime, calculateStats]);
+  }, [calculateStats, currentWarehouse, runOrderSearch, searchText, searchType, sortOrdersDescending, timeFilter]);
   
   // 处理时间筛选切换（BUG 4 修复：使用临时筛选函数避免闭包问题）
   const handleTimeFilterChange = useCallback(async (filter: TimeFilterType) => {
@@ -1345,7 +1440,7 @@ export default function OrdersScreen() {
             }
             placeholderTextColor={theme.textMuted}
             value={searchText}
-            onChangeText={handleSearch}
+              onChangeText={handleSearchInput}
             
           />
           {searchText.length > 0 && (
@@ -1561,11 +1656,11 @@ export default function OrdersScreen() {
                     <View style={styles.orderContent}>
                       <View style={styles.orderInfo}>
                         {order.customer_name ? (
-                          <Text style={styles.customerName}>
+                          <Text style={styles.customerName} numberOfLines={1}>
                             {order.customer_name}
                           </Text>
                         ) : (
-                          <Text style={styles.noCustomer}>点击设置客户名称</Text>
+                          <Text style={styles.noCustomer} numberOfLines={1}>点击设置客户名称</Text>
                         )}
                       </View>
                       
@@ -1599,7 +1694,7 @@ export default function OrdersScreen() {
                             activeOpacity={0.7} onPress={() => handleViewMaterial(material)}
                             onLongPress={() => handleDeleteMaterial(material)}
                           >
-                            <Text style={styles.materialModel}>{material.model || '未知型号'}</Text>
+                            <Text style={styles.materialModel} numberOfLines={1}>{material.model || '未知型号'}</Text>
                             <Text style={styles.materialDetails}>批次: {material.batch || '-'}</Text>
                             <Text style={styles.materialDetails}>
                               数量: {material.quantity || 0}
