@@ -68,11 +68,12 @@ interface ScanRecord {
 // ========================================
 // React.memo 优化：列表项组件
 // ========================================
-const RecordItem = React.memo(({ item, isExpanded, onToggle, onDelete, onEditQuantity, checkType, theme, styles }: {
+const RecordItem = React.memo(({ item, isExpanded, onToggle, onDeleteGroup, onDeleteRecord, onEditQuantity, checkType, theme, styles }: {
   item: any;
   isExpanded: boolean;
   onToggle: (key: string) => void;
-  onDelete: (item: any) => void;
+  onDeleteGroup: (item: any) => void;
+  onDeleteRecord: (record: any) => void;
   onEditQuantity?: (record: any) => void;
   checkType: CheckType;
   theme: any;
@@ -85,7 +86,7 @@ const RecordItem = React.memo(({ item, isExpanded, onToggle, onDelete, onEditQua
       {/* 聚合项（两行布局） */}
       <TouchableOpacity style={styles.itemRow}
         activeOpacity={0.7} onPress={() => onToggle(key)}
-        onLongPress={() => onDelete(item)}
+        onLongPress={() => onDeleteGroup(item)}
       >
         <View style={styles.itemLeft}>
           <TouchableOpacity style={styles.itemModelRow}
@@ -129,7 +130,7 @@ const RecordItem = React.memo(({ item, isExpanded, onToggle, onDelete, onEditQua
             <TouchableOpacity
               key={record.id}
               style={styles.detailItem}
-              onLongPress={() => onDelete(record)}
+              onLongPress={() => onDeleteRecord(record)}
               delayLongPress={500}
             >
               <Text style={styles.detailText}>
@@ -182,11 +183,12 @@ export default function InventoryScreen() {
   // AsyncStorage Key
   const INVENTORY_CHECK_RECORDS_KEY = 'inventory_check_records';
   const INVENTORY_CHECK_TYPE_KEY = 'inventory_check_type';
+  const INVENTORY_PENDING_WAREHOUSE_KEY = 'inventory_pending_warehouse';
   // 全局仓库 Storage Key
   const GLOBAL_WAREHOUSE_KEY = STORAGE_KEYS.GLOBAL_WAREHOUSE;
 
   // 加载扫描记录
-  const loadCheckRecords = async () => {
+  const loadCheckRecords = async (warehouse?: Warehouse | null) => {
     try {
       const savedRecords = await AsyncStorage.getItem(INVENTORY_CHECK_RECORDS_KEY);
       if (savedRecords) {
@@ -198,27 +200,25 @@ export default function InventoryScreen() {
           setCheckType(savedType as CheckType);
         }
 
-        const savedWarehouse = await AsyncStorage.getItem(GLOBAL_WAREHOUSE_KEY);
+        const savedWarehouse = await AsyncStorage.getItem(INVENTORY_PENDING_WAREHOUSE_KEY);
         if (savedWarehouse) {
-          const warehouse = JSON.parse(savedWarehouse);
+          const savedWarehouseInfo = JSON.parse(savedWarehouse);
 
           // 验证保存时的仓库是否与当前仓库匹配
-          if (currentWarehouse) {
-            if (warehouse.id !== currentWarehouse.id) {
+          if (warehouse) {
+            if (savedWarehouseInfo.id !== warehouse.id) {
               // 仓库不匹配，不恢复记录
               console.log('[盘点] 仓库不匹配，跳过恢复:', {
-                savedWarehouseId: warehouse.id,
-                currentWarehouseId: currentWarehouse.id,
+                savedWarehouseId: savedWarehouseInfo.id,
+                currentWarehouseId: warehouse.id,
               });
               return;
             }
-          } else if (!currentWarehouse) {
+          } else {
             // 当前仓库未加载，不恢复记录（等待仓库加载完成后再恢复）
             console.log('[盘点] 当前仓库未加载，跳过恢复');
             return;
           }
-
-          setCurrentWarehouse(warehouse);
         }
 
         setScanRecords(records);
@@ -238,7 +238,7 @@ export default function InventoryScreen() {
       await AsyncStorage.setItem(INVENTORY_CHECK_RECORDS_KEY, JSON.stringify(records));
       await AsyncStorage.setItem(INVENTORY_CHECK_TYPE_KEY, type);
       if (warehouse) {
-        await AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
+        await AsyncStorage.setItem(INVENTORY_PENDING_WAREHOUSE_KEY, JSON.stringify(warehouse));
       }
     } catch (error) {
       console.error('[盘点] 保存记录失败:', error);
@@ -250,6 +250,7 @@ export default function InventoryScreen() {
     try {
       await AsyncStorage.removeItem(INVENTORY_CHECK_RECORDS_KEY);
       await AsyncStorage.removeItem(INVENTORY_CHECK_TYPE_KEY);
+      await AsyncStorage.removeItem(INVENTORY_PENDING_WAREHOUSE_KEY);
     } catch (error) {
       console.error('[盘点] 清空记录失败:', error);
     }
@@ -298,9 +299,6 @@ export default function InventoryScreen() {
   useEffect(() => {
     if (scanRecords.length > 0) {
       saveCheckRecords(scanRecords, checkType, currentWarehouse);
-    } else {
-      // 没有数据时清空存储
-      clearCheckRecords();
     }
   }, [scanRecords, checkType, currentWarehouse]);
 
@@ -377,16 +375,13 @@ export default function InventoryScreen() {
         // 3. 设置当前仓库并等待状态更新
         setCurrentWarehouse(warehouse);
 
-        // 4. 等待状态更新完成（给 React 一帧的时间）
-        await new Promise(resolve => setTimeout(resolve, 0));
+        // 4. 加载检查记录（直接使用显式仓库，避免闭包拿到旧状态）
+        await loadCheckRecords(warehouse);
 
-        // 5. 加载检查记录（仓库已加载）
-        await loadCheckRecords();
+        // 5. 加载已保存的盘点记录
+        await loadSavedRecords(warehouse?.id);
 
-        // 6. 加载已保存的盘点记录
-        await loadSavedRecords();
-
-        // 7. 聚焦输入框
+        // 6. 聚焦输入框
         focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
       };
 
@@ -408,25 +403,26 @@ export default function InventoryScreen() {
   const handleWarehouseChange = async (warehouse: Warehouse) => {
     // 先保存当前仓库的扫码记录
     if (scanRecords.length > 0) {
-      await AsyncStorage.setItem(INVENTORY_CHECK_RECORDS_KEY, JSON.stringify(scanRecords));
+      await saveCheckRecords(scanRecords, checkType, currentWarehouse);
     }
     
     // 切换仓库
     setCurrentWarehouse(warehouse);
-    AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
+    await AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
     
-    // 清空当前扫码记录（新仓库从零开始）
+    // 先重置界面状态，再恢复新仓库自己的暂存
     setScanRecords([]);
-    await AsyncStorage.removeItem(INVENTORY_CHECK_RECORDS_KEY);
-    
-    // 清空编辑记录
+    setExpandedGroups(new Set());
     setEditingRecord(null);
     setQuantityModalVisible(false);
+
+    await loadCheckRecords(warehouse);
+    await loadSavedRecords(warehouse.id);
   };
 
   // 加载已保存盘点记录
-  const loadSavedRecords = async () => {
-    const records = await getAllInventoryCheckRecords(currentWarehouse?.id);
+  const loadSavedRecords = async (warehouseId?: string) => {
+    const records = await getAllInventoryCheckRecords(warehouseId);
     setSavedRecords(records);
   };
 
@@ -640,17 +636,8 @@ export default function InventoryScreen() {
       return;
     }
 
-    // C: 切换前自动保存当前记录
-    if (scanRecords.length > 0) {
-      await saveCheckRecords(scanRecords, checkType, currentWarehouse);
-    }
-
-    // B: 清空当前页面积累的扫描记录
-    setScanRecords([]);
-    setExpandedGroups(new Set());
-
     // 切换到新仓库
-    handleWarehouseChange(wh);
+    await handleWarehouseChange(wh);
     setShowWarehousePicker(false);
     showToast(`已切换到 ${wh.name}`, 'success');
     setTimeout(() => inputRef.current?.focus(), 100);
@@ -733,7 +720,9 @@ export default function InventoryScreen() {
       showToast(`盘点成功！共 ${scanRecords.length} 条`, 'success');
       feedbackConfirm();
       setScanRecords([]);
-      loadSavedRecords(); // 刷新已保存记录
+      setExpandedGroups(new Set());
+      await clearCheckRecords();
+      await loadSavedRecords(currentWarehouse.id);
     } catch (error) {
       console.error('[库存盘点] 保存失败:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -748,6 +737,7 @@ export default function InventoryScreen() {
   const handleClearRecords = () => {
     if (scanRecords.length === 0) return;
     setScanRecords([]);
+    clearCheckRecords();
     showToast('已清空', 'warning');
     feedbackWarning();
   };
@@ -847,21 +837,25 @@ export default function InventoryScreen() {
         <View style={styles.topBar}>
           {/* 盘点类型选择 */}
           <View style={styles.typeSelector}>
-            <TouchableOpacity style={[styles.typeBtn, checkType === 'whole' && styles.typeBtnActive]}
-              activeOpacity={0.7} onPress={() => {
-                setCheckType('whole');
-                setScanRecords([]);
-              }}
-            >
+              <TouchableOpacity style={[styles.typeBtn, checkType === 'whole' && styles.typeBtnActive]}
+                activeOpacity={0.7} onPress={() => {
+                  setCheckType('whole');
+                  setScanRecords([]);
+                  clearCheckRecords();
+                  setExpandedGroups(new Set());
+                }}
+              >
               <FontAwesome6 name="box" size={12} color={checkType === 'whole' ? theme.white : theme.textSecondary} />
               <Text style={[styles.typeBtnText, checkType === 'whole' && styles.typeBtnTextActive]}>整包</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.typeBtn, checkType === 'partial' && styles.typeBtnActive]}
-              activeOpacity={0.7} onPress={() => {
-                setCheckType('partial');
-                setScanRecords([]);
-              }}
-            >
+              <TouchableOpacity style={[styles.typeBtn, checkType === 'partial' && styles.typeBtnActive]}
+                activeOpacity={0.7} onPress={() => {
+                  setCheckType('partial');
+                  setScanRecords([]);
+                  clearCheckRecords();
+                  setExpandedGroups(new Set());
+                }}
+              >
               <FontAwesome6 name="layer-group" size={12} color={checkType === 'partial' ? theme.white : theme.textSecondary} />
               <Text style={[styles.typeBtnText, checkType === 'partial' && styles.typeBtnTextActive]}>拆包</Text>
             </TouchableOpacity>
@@ -920,7 +914,8 @@ export default function InventoryScreen() {
                   item={item}
                   isExpanded={isExpanded}
                   onToggle={toggleExpand}
-                  onDelete={handleDeleteGroup}
+                  onDeleteGroup={handleDeleteGroup}
+                  onDeleteRecord={handleDeleteRecord}
                   onEditQuantity={openQuantityModal}
                   checkType={checkType}
                   theme={theme}
