@@ -22,6 +22,8 @@ import {
   getAllWarehouses,
   getDefaultWarehouse,
   addInboundRecord,
+  getAllInboundRecords,
+  updateInboundSummary,
   generateInboundNo,
   detectRule,
   parseWithRule,
@@ -724,6 +726,11 @@ export default function InboundScreen() {
       } else {
         showToast(`入库成功！共 ${scanRecords.length} 条`, 'success');
         feedbackConfirm();
+
+        // 更新入库汇总表（按型号+版本号+入库日期每日统计）
+        if (currentWarehouse) {
+          await updateInboundSummary(currentWarehouse.id);
+        }
 
         // 刷新已保存入库记录
         await loadSavedInboundRecords();

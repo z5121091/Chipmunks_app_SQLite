@@ -1126,6 +1126,23 @@ const performDatabaseInitialization = async (): Promise<void> => {
         customFields TEXT
       );
 
+      -- 入库汇总表（按型号+版本号+入库日期每日汇总）
+      CREATE TABLE IF NOT EXISTS inbound_summary (
+        id TEXT PRIMARY KEY,
+        warehouse_id TEXT NOT NULL,
+        warehouse_name TEXT NOT NULL,
+        inventory_code TEXT,
+        scan_model TEXT NOT NULL,
+        version TEXT,
+        in_date TEXT NOT NULL,
+        total_quantity INTEGER NOT NULL,
+        sourceNo TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(warehouse_id, scan_model, version, in_date)
+      );
+
       -- 盘点记录表
       CREATE TABLE IF NOT EXISTS inventory_check_records (
         id TEXT PRIMARY KEY,
@@ -2782,6 +2799,109 @@ export const addInboundRecord = async (record: Omit<InboundRecord, 'id' | 'creat
   }
 };
 
+// 更新入库汇总表（按型号+版本号+入库日期每日汇总）
+export const updateInboundSummary = async (warehouseId: string): Promise<void> => {
+  try {
+    const database = getDb();
+
+    // 查询该仓库的所有入库记录，按型号+版本号+入库日期分组汇总
+    const summaryData = await database.getAllAsync<{
+      warehouse_id: string;
+      warehouse_name: string;
+      inventory_code: string;
+      scan_model: string;
+      version: string;
+      in_date: string;
+      total_quantity: number;
+      sourceNo: string;
+      notes: string;
+    }>(
+      `SELECT
+        warehouse_id,
+        warehouse_name,
+        inventory_code,
+        scan_model,
+        version,
+        in_date,
+        SUM(quantity) as total_quantity,
+        sourceNo,
+        notes
+       FROM inbound_records
+       WHERE warehouse_id = ?
+       GROUP BY warehouse_id, scan_model, version, in_date
+       ORDER BY in_date DESC, scan_model, version`,
+      [warehouseId]
+    );
+
+    // 删除该仓库的旧汇总数据
+    await database.runAsync('DELETE FROM inbound_summary WHERE warehouse_id = ?', [warehouseId]);
+
+    // 插入新的汇总数据
+    const now = getISODateTime();
+    for (const row of summaryData) {
+      const id = generateId();
+      await database.runAsync(
+        `INSERT INTO inbound_summary (
+          id, warehouse_id, warehouse_name, inventory_code, scan_model, version,
+          in_date, total_quantity, sourceNo, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          row.warehouse_id,
+          row.warehouse_name,
+          row.inventory_code || null,
+          row.scan_model,
+          row.version || null,
+          row.in_date,
+          row.total_quantity,
+          row.sourceNo || null,
+          row.notes || null,
+          now,
+          now,
+        ]
+      );
+    }
+
+    console.log(`[updateInboundSummary] 更新仓库 ${warehouseId} 的汇总数据，共 ${summaryData.length} 条记录`);
+  } catch (error) {
+    console.error('[updateInboundSummary] 更新入库汇总表失败:', error);
+    throw error;
+  }
+};
+
+// 获取入库汇总数据
+export const getInboundSummary = async (warehouseId?: string, startDate?: string, endDate?: string): Promise<any[]> => {
+  try {
+    const database = getDb();
+
+    let sql = 'SELECT * FROM inbound_summary WHERE 1=1';
+    const params: any[] = [];
+
+    if (warehouseId) {
+      sql += ' AND warehouse_id = ?';
+      params.push(warehouseId);
+    }
+
+    if (startDate) {
+      sql += ' AND in_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND in_date <= ?';
+      params.push(endDate);
+    }
+
+    sql += ' ORDER BY in_date DESC, scan_model, version';
+
+    const result = await database.getAllAsync(sql, params);
+    return result;
+  } catch (error) {
+    console.error('[getInboundSummary] 获取入库汇总数据失败:', error);
+    throw error;
+  }
+};
+
 // 删除入库记录
 export const deleteInboundRecord = async (id: string): Promise<void> => {
   try {
@@ -3433,6 +3553,7 @@ export const clearAllBusinessData = async (): Promise<void> => {
     await database.runAsync('DELETE FROM unpack_records');
     await database.runAsync('DELETE FROM print_history');
     await database.runAsync('DELETE FROM inbound_records');
+    await database.runAsync('DELETE FROM inbound_summary');
     await database.runAsync('DELETE FROM inventory_check_records');
     // 清空解析规则和自定义字段（配置数据）
     await database.runAsync('DELETE FROM qr_code_rules');
