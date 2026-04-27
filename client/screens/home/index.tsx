@@ -232,12 +232,10 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
-            <Text style={styles.heroEyebrow}>仓库作业台</Text>
             <Text style={styles.heroTitle}>掌上仓库</Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>高频操作</Text>
             <View style={styles.primaryGrid}>
               {primaryModules.map(renderPrimaryCard)}
             </View>
