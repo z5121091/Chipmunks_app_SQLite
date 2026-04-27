@@ -1287,19 +1287,19 @@ export const upsertOrder = async (
         params.push(warehouse.id);
         params.push(warehouse.name);
       }
-      
-      params.push(orderNo);
-      
-      await database.runAsync(
-        `UPDATE orders SET ${updates.join(', ')} WHERE order_no = ?`,
-        params
-      );
-      
-      // 如果更新了客户名称或仓库信息，同步更新物料
-      if (customerName !== undefined || warehouse) {
+
+      if (updates.length > 0) {
+        params.push(orderNo);
+
+        await database.runAsync(
+          `UPDATE orders SET ${updates.join(', ')} WHERE order_no = ?`,
+          params
+        );
+
+        // 如果更新了客户名称或仓库信息，同步更新物料
         const materialUpdates: string[] = [];
         const materialParams: any[] = [];
-        
+
         if (customerName !== undefined && customerName !== '') {
           materialUpdates.push('customer_name = ?');
           materialParams.push(customerName);
@@ -1382,13 +1382,31 @@ export const getAllOrders = async (): Promise<Order[]> => {
 // 删除订单及其所有物料记录
 export const deleteOrder = async (orderNo: string): Promise<void> => {
   try {
+    if (!orderNo || typeof orderNo !== 'string' || orderNo.trim() === '') {
+      console.warn('[deleteOrder] 无效的 orderNo:', orderNo);
+      return;
+    }
+
     const database = getDb();
-    
-    // 删除订单
-    await database.runAsync('DELETE FROM orders WHERE order_no = ?', [orderNo]);
-    
-    // 删除关联的物料记录
-    await database.runAsync('DELETE FROM materials WHERE order_no = ?', [orderNo]);
+    const trimmedOrderNo = orderNo.trim();
+
+    await database.execAsync('BEGIN TRANSACTION');
+
+    try {
+      // 删除关联的拆包记录，避免留下孤儿数据
+      await database.runAsync('DELETE FROM unpack_records WHERE order_no = ?', [trimmedOrderNo]);
+
+      // 删除关联的物料记录
+      await database.runAsync('DELETE FROM materials WHERE order_no = ?', [trimmedOrderNo]);
+
+      // 最后删除订单
+      await database.runAsync('DELETE FROM orders WHERE order_no = ?', [trimmedOrderNo]);
+
+      await database.execAsync('COMMIT');
+    } catch (error) {
+      await database.execAsync('ROLLBACK');
+      throw error;
+    }
   } catch (error) {
     console.error('删除订单失败:', error);
     throw error;
@@ -1778,17 +1796,20 @@ export const checkMaterialExists = async (
       const existingInOtherOrder = await database.getFirstAsync<any>(otherOrderSql, otherOrderParams);
 
       if (existingInOtherOrder) {
-        const scanQty = quantity || '';
-        const remainingQty = existingInOtherOrder.remaining_quantity || existingInOtherOrder.quantity;
+        const scanQty = quantity != null && quantity !== '' ? parseInt(String(quantity), 10) : null;
+        const remainingQty = existingInOtherOrder.remaining_quantity != null && existingInOtherOrder.remaining_quantity !== ''
+          ? parseInt(String(existingInOtherOrder.remaining_quantity), 10)
+          : parseInt(String(existingInOtherOrder.quantity), 10);
         const material = {
           ...existingInOtherOrder,
           customFields: stringToJson<Record<string, string>>(existingInOtherOrder.customFields),
           isUnpacked: existingInOtherOrder.isUnpacked === 1,
         };
+        const materialQty = parseInt(String(material.quantity), 10);
 
-        if (material.isUnpacked && scanQty === remainingQty) {
+        if (material.isUnpacked && scanQty !== null && scanQty === remainingQty) {
           return { material: null, isUnpacked: false, canRescan: false };
-        } else if (scanQty === material.quantity) {
+        } else if (scanQty !== null && scanQty === materialQty) {
           return { material, isUnpacked: false, canRescan: false };
         }
       }
@@ -2703,6 +2724,37 @@ export const importInventoryBindings = async (bindings: Array<{ scan_model: stri
 
 // ========== 入库记录相关函数 ==========
 
+const getNextDailySequence = async (
+  database: SQLite.SQLiteDatabase,
+  tableName: 'inbound_records' | 'inventory_check_records',
+  columnName: 'inbound_no' | 'check_no',
+  prefix: string
+): Promise<number> => {
+  const rows = await database.getAllAsync<{ document_no: string }>(
+    `SELECT ${columnName} as document_no
+     FROM ${tableName}
+     WHERE ${columnName} LIKE ?
+     GROUP BY ${columnName}`,
+    [`${prefix}-%`]
+  );
+
+  let maxSequence = 0;
+
+  rows.forEach(row => {
+    const documentNo = row.document_no || '';
+    const suffix = documentNo.startsWith(`${prefix}-`)
+      ? documentNo.slice(prefix.length + 1)
+      : '';
+    const sequence = parseInt(suffix, 10);
+
+    if (!Number.isNaN(sequence)) {
+      maxSequence = Math.max(maxSequence, sequence);
+    }
+  });
+
+  return maxSequence + 1;
+};
+
 // 生成入库单号
 export const generateInboundNo = async (): Promise<string> => {
   try {
@@ -2714,15 +2766,10 @@ export const generateInboundNo = async (): Promise<string> => {
     const database = getDb();
     const today = getLocalDateString();
     const todayPrefix = `RK-${today}`;
-    
-    // 查询今日已有的入库记录数
-    const result = await database.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM inbound_records WHERE inbound_no LIKE ?",
-      [`${todayPrefix}%`]
-    );
-    
-    const count = (result?.count || 0) + 1;
-    const sequence = String(count).padStart(3, '0');
+
+    const sequence = String(
+      await getNextDailySequence(database, 'inbound_records', 'inbound_no', todayPrefix)
+    ).padStart(3, '0');
     
     return `${todayPrefix}-${sequence}`;
   } catch (error) {
@@ -2947,15 +2994,10 @@ export const generateCheckNo = async (): Promise<string> => {
     const database = getDb();
     const today = getLocalDateString();
     const todayPrefix = `PD-${today}`;
-    
-    // 查询今日已有的盘点记录数
-    const result = await database.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM inventory_check_records WHERE check_no LIKE ?",
-      [`${todayPrefix}%`]
-    );
-    
-    const count = (result?.count || 0) + 1;
-    const sequence = String(count).padStart(3, '0');
+
+    const sequence = String(
+      await getNextDailySequence(database, 'inventory_check_records', 'check_no', todayPrefix)
+    ).padStart(3, '0');
     
     return `${todayPrefix}-${sequence}`;
   } catch (error) {
