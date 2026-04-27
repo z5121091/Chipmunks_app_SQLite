@@ -35,8 +35,8 @@ const HomeModuleCard = React.memo<{
 }>(({ module, variant, styles, screenWidth, onPress }) => {
   const isPrimary = variant === 'primary';
   const iconSize = isPrimary
-    ? (screenWidth <= 410 ? 28 : 32)
-    : (screenWidth <= 410 ? 20 : 24);
+    ? (screenWidth <= 410 ? 38 : 42)
+    : (screenWidth <= 410 ? 25 : 28);
 
   return (
     <TouchableOpacity
@@ -143,7 +143,7 @@ export default function HomeScreen() {
       color: moduleColors[0],
       route: '/inbound',
       priority: 'primary',
-      action: '开始扫码',
+      action: '收货扫码',
     },
     {
       id: 'outbound',
@@ -152,7 +152,7 @@ export default function HomeScreen() {
       color: moduleColors[1],
       route: '/outbound',
       priority: 'primary',
-      action: '开始扫码',
+      action: '发货扫码',
     },
     {
       id: 'orders',
@@ -161,7 +161,7 @@ export default function HomeScreen() {
       color: moduleColors[2],
       route: '/orders',
       priority: 'secondary',
-      action: '查订单',
+      action: '订单查询',
     },
     {
       id: 'inventory',
@@ -170,7 +170,7 @@ export default function HomeScreen() {
       color: moduleColors[3],
       route: '/inventory',
       priority: 'secondary',
-      action: '去盘点',
+      action: '库存盘点',
     },
     {
       id: 'material',
@@ -179,7 +179,7 @@ export default function HomeScreen() {
       color: moduleColors[4],
       route: '/inventory-binding',
       priority: 'secondary',
-      action: '绑物料',
+      action: '编码绑定',
     },
     {
       id: 'settings',
@@ -188,7 +188,7 @@ export default function HomeScreen() {
       color: moduleColors[5],
       route: '/settings',
       priority: 'secondary',
-      action: '设置',
+      action: '系统配置',
     },
   ];
 
@@ -229,17 +229,19 @@ export default function HomeScreen() {
             <Text style={styles.heroTitle}>仓库作业台</Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>扫码作业</Text>
-            <View style={styles.primaryGrid}>
-              {primaryModules.map(renderPrimaryCard)}
+          <View style={styles.workbench}>
+            <View style={styles.primarySection}>
+              <Text style={styles.sectionLabel}>扫码作业</Text>
+              <View style={styles.primaryGrid}>
+                {primaryModules.map(renderPrimaryCard)}
+              </View>
             </View>
-          </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>查询配置</Text>
-            <View style={styles.secondaryGrid}>
-              {secondaryModules.map(renderSecondaryCard)}
+            <View style={styles.secondarySection}>
+              <Text style={styles.sectionLabel}>查询配置</Text>
+              <View style={styles.secondaryGrid}>
+                {secondaryModules.map(renderSecondaryCard)}
+              </View>
             </View>
           </View>
         </ScrollView>

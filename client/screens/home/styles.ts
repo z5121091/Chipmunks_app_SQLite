@@ -7,10 +7,10 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
   const primaryGap = isSmallScreen ? 10 : 14;
   const secondaryGap = isSmallScreen ? 10 : 14;
   const secondaryCardWidth = (screenWidth - horizontalPadding * 2 - secondaryGap) / 2;
-  const primaryCardHeight = Math.max(138, Math.min(screenHeight * 0.19, 170));
-  const secondaryCardHeight = Math.max(88, Math.min(screenHeight * 0.12, 112));
-  const primaryIconSize = isSmallScreen ? 52 : 58;
-  const secondaryIconSize = isSmallScreen ? 36 : 40;
+  const primaryCardHeight = Math.max(172, Math.min(screenHeight * 0.27, 230));
+  const secondaryCardHeight = Math.max(118, Math.min(screenHeight * 0.17, 150));
+  const primaryIconSize = isSmallScreen ? 76 : 84;
+  const secondaryIconSize = isSmallScreen ? 50 : 56;
 
   return StyleSheet.create({
     container: {
@@ -19,13 +19,15 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     },
 
     content: {
+      flexGrow: 1,
+      minHeight: screenHeight - 24,
       paddingHorizontal: horizontalPadding,
-      paddingTop: isSmallScreen ? 14 : 18,
-      paddingBottom: 24,
+      paddingTop: isSmallScreen ? 12 : 16,
+      paddingBottom: isSmallScreen ? 16 : 24,
     },
 
     hero: {
-      marginBottom: Spacing.lg,
+      marginBottom: isSmallScreen ? Spacing.md : Spacing.lg,
     },
 
     heroEyebrow: {
@@ -40,8 +42,18 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       letterSpacing: 0.3,
     },
 
-    section: {
-      marginBottom: Spacing.lg,
+    workbench: {
+      flex: 1,
+      justifyContent: 'space-between',
+      gap: isSmallScreen ? Spacing.md : Spacing.lg,
+    },
+
+    primarySection: {
+      flexShrink: 0,
+    },
+
+    secondarySection: {
+      flexShrink: 0,
     },
 
     sectionLabel: {
@@ -72,7 +84,9 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
 
     primaryCardInner: {
       flex: 1,
-      padding: Spacing.md,
+      padding: isSmallScreen ? Spacing.md : Spacing.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
     primaryIconContainer: {
@@ -81,20 +95,21 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
       borderRadius: primaryIconSize / 2,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: Spacing.md,
+      marginBottom: isSmallScreen ? Spacing.sm : Spacing.md,
     },
 
     primaryTitle: {
       ...Typography.h4,
       color: theme.textPrimary,
       letterSpacing: 0.2,
+      textAlign: 'center',
     },
 
     primaryFooter: {
-      marginTop: 'auto',
+      marginTop: Spacing.md,
       flexDirection: 'row',
       alignItems: 'center',
-      alignSelf: 'flex-start',
+      alignSelf: 'center',
       gap: 6,
       paddingVertical: 6,
       paddingHorizontal: 10,
@@ -133,8 +148,9 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
 
     secondaryCardInner: {
       flex: 1,
-      padding: Spacing.sm,
-      justifyContent: 'space-between',
+      padding: Spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
     secondaryIconContainer: {
@@ -149,12 +165,14 @@ export const createStyles = (theme: Theme, screenWidth: number, screenHeight: nu
     secondaryTitle: {
       ...Typography.smallMedium,
       color: theme.textPrimary,
+      textAlign: 'center',
     },
 
     secondaryFooter: {
-      marginTop: 'auto',
+      marginTop: Spacing.xs,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: 4,
     },
 
