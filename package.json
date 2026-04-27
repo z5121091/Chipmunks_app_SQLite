@@ -7,9 +7,9 @@
     "build": "bash .cozeproj/scripts/prod_build.sh",
     "start": "bash .cozeproj/scripts/prod_run.sh",
     "preinstall": "npx only-allow pnpm",
-    "lint:client": "npm run lint --prefix ./client",
-    "lint:server": "npm run lint --prefix ./server",
-    "lint:all": "npm run lint --prefix ./client; npm run lint --prefix ./server"
+    "lint:client": "cd client && npx expo lint",
+    "lint:server": "cd server && npx tsc --noEmit",
+    "lint:all": "cd client && npx expo lint && cd ../server && npx tsc --noEmit"
   },
   "dependencies": {},
   "devDependencies": {},
