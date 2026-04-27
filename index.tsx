@@ -67,13 +67,14 @@ interface ScanRecord {
 // ========================================
 // React.memo 优化：列表项组件
 // ========================================
-const RecordItem = React.memo(({ item, isExpanded, isConfirmed, onToggle, onConfirm, onDelete, theme, styles }: {
+const RecordItem = React.memo(({ item, isExpanded, isConfirmed, onToggle, onConfirm, onDeleteGroup, onDeleteRecord, theme, styles }: {
   item: any;
   isExpanded: boolean;
   isConfirmed: boolean;
   onToggle: (key: string) => void;
   onConfirm: (key: string) => void;
-  onDelete: (item: any) => void;
+  onDeleteGroup: (item: any) => void;
+  onDeleteRecord: (record: any) => void;
   theme: any;
   styles: any;
 }) => {
@@ -87,7 +88,7 @@ const RecordItem = React.memo(({ item, isExpanded, isConfirmed, onToggle, onConf
           styles.itemRow,
           isConfirmed && styles.itemConfirmed
         ]}
-        onLongPress={() => onDelete(item)}
+        onLongPress={() => onDeleteGroup(item)}
       >
         {/* 勾选框 */}
         <TouchableOpacity style={styles.checkbox}
@@ -125,7 +126,7 @@ const RecordItem = React.memo(({ item, isExpanded, isConfirmed, onToggle, onConf
             <TouchableOpacity
               key={record.id}
               style={styles.detailItem}
-              onLongPress={() => onDelete(record)}
+              onLongPress={() => onDeleteRecord(record)}
               delayLongPress={500}
             >
               <Text style={styles.detailText}>
@@ -203,11 +204,12 @@ export default function InboundScreen() {
   const [confirmedGroups, setConfirmedGroups] = useState<Set<string>>(new Set());
 
   // 加载扫描记录
-  const loadScanRecords = async (warehouse?: Warehouse | null) => {
+  const loadScanRecords = async (warehouse?: Warehouse | null): Promise<string | null> => {
     try {
       const savedRecords = await AsyncStorage.getItem(INBOUND_SCAN_RECORDS_KEY);
       if (savedRecords) {
         const records = JSON.parse(savedRecords) as ScanRecord[];
+        let restoredInboundNo: string | null = null;
 
         // 恢复供应商和入库单号，同时检查仓库是否匹配
         const pendingData = await AsyncStorage.getItem(INBOUND_PENDING_DATA_KEY);
@@ -223,16 +225,17 @@ export default function InboundScreen() {
                 savedWarehouseId: data.warehouseId,
                 currentWarehouseId: currentWarehouseId,
               });
-              return;
+              return null;
             }
           } else if (!currentWarehouseId) {
             // 当前仓库未加载，不恢复记录（等待仓库加载完成后再恢复）
             console.log('[loadScanRecords] 当前仓库未加载，跳过恢复');
-            return;
+            return null;
           }
 
           setCurrentSupplier(data.supplier || null);
           setInboundNo(data.inboundNo || '');
+          restoredInboundNo = data.inboundNo || null;
         }
 
         setScanRecords(records);
@@ -240,10 +243,14 @@ export default function InboundScreen() {
         if (records.length > 0) {
           showToast(`${Str.inboundRestoreRecords} ${records.length} ${Str.inboundRecords}`, 'success');
         }
+
+        return restoredInboundNo;
       }
     } catch (error) {
       console.error('加载扫描记录失败:', error);
     }
+
+    return null;
   };
 
   // 保存扫描记录
@@ -274,10 +281,10 @@ export default function InboundScreen() {
   };
 
   // 加载已保存入库记录（最新的入库批次）
-  const loadSavedInboundRecords = async () => {
+  const loadSavedInboundRecords = async (warehouseId?: string) => {
     try {
       // 获取当前仓库的最新入库记录
-      const records = await getAllInboundRecords(currentWarehouse?.id);
+      const records = await getAllInboundRecords(warehouseId);
 
       if (records.length === 0) {
         setSavedInboundRecords([]);
@@ -330,13 +337,13 @@ export default function InboundScreen() {
         setCurrentWarehouse(warehouse);
 
         // 4. 加载扫描记录（直接传入 warehouse 参数，避免状态闭包问题）
-        await loadScanRecords(warehouse);
+        const restoredInboundNo = await loadScanRecords(warehouse);
 
         // 5. 加载已保存入库记录
-        await loadSavedInboundRecords();
+        await loadSavedInboundRecords(warehouse?.id);
 
         // 6. 如果没有入库单号，生成新单号
-        if (!inboundNo) {
+        if (!restoredInboundNo) {
           await generateNo();
         }
 
@@ -363,15 +370,23 @@ export default function InboundScreen() {
     
     // 切换仓库
     setCurrentWarehouse(warehouse);
-    AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
-    
-    // 清空当前扫码记录（新仓库从零开始）
+    await AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
+
+    // 先重置界面状态，再恢复新仓库自己的暂存
     setScanRecords([]);
-    await AsyncStorage.removeItem(INBOUND_SCAN_RECORDS_KEY);
-    
+    setCurrentSupplier(null);
+    setInboundNo('');
+
     // 清空展开和确认状态
     setExpandedGroups(new Set());
     setConfirmedGroups(new Set());
+
+    const restoredInboundNo = await loadScanRecords(warehouse);
+    await loadSavedInboundRecords(warehouse.id);
+
+    if (!restoredInboundNo) {
+      await generateNo();
+    }
   };
 
   // 生成入库单号
@@ -635,18 +650,8 @@ export default function InboundScreen() {
       return;
     }
 
-    // C: 切换前自动保存当前记录
-    if (scanRecords.length > 0) {
-      await saveScanRecords(scanRecords);
-    }
-
-    // B: 清空当前页面积累的扫描记录
-    setScanRecords([]);
-    setExpandedGroups(new Set());
-    setConfirmedGroups(new Set());
-
     // 切换到新仓库
-    handleWarehouseChange(wh);
+    await handleWarehouseChange(wh);
     setShowWarehousePicker(false);
     showToast(`已切换到 ${wh.name}`, 'success');
     setTimeout(() => inputRef.current?.focus(), 100);
@@ -733,13 +738,15 @@ export default function InboundScreen() {
         }
 
         // 刷新已保存入库记录
-        await loadSavedInboundRecords();
+        await loadSavedInboundRecords(currentWarehouse.id);
 
         // 全部成功才清空记录
         setScanRecords([]);
         setCurrentSupplier(null);
-        generateNo();
-        clearScanRecords();
+        setExpandedGroups(new Set());
+        setConfirmedGroups(new Set());
+        await clearScanRecords();
+        await generateNo();
       }
     } catch (error) {
       console.error('[handleSaveInbound] 保存失败:', error);
@@ -967,7 +974,8 @@ export default function InboundScreen() {
                   isConfirmed={isConfirmed}
                   onToggle={toggleExpand}
                   onConfirm={toggleConfirm}
-                  onDelete={handleDeleteGroup}
+                  onDeleteGroup={handleDeleteGroup}
+                  onDeleteRecord={handleDeleteRecord}
                   theme={theme}
                   styles={styles}
                 />
