@@ -40,6 +40,8 @@ export default function RootLayout() {
         <Stack.Screen name="warehouse-management" />
         <Stack.Screen name="rules" />
         <Stack.Screen name="custom-fields" />
+        <Stack.Screen name="rule-prefixes" />
+        <Stack.Screen name="rule-prefix-edit" />
         <Stack.Screen name="inventory-binding" />
         <Stack.Screen name="detail" />
         <Stack.Screen name="settings" />

@@ -1151,6 +1151,14 @@ export default function SettingsScreen() {
             false,
             `${configStats.customFields} 个`
           )}
+
+          {renderMenuCard(
+            '前缀配置',
+            '去除字段前的标签文字',
+            'tag',
+            theme.success,
+            () => router.push('/rule-prefixes')
+          )}
         </View>
         
         {/* ========== 数据同步 ========== */}
@@ -1613,4 +1621,3 @@ export default function SettingsScreen() {
     </Screen>
   );
 }
-

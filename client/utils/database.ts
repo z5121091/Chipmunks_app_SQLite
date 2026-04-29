@@ -33,6 +33,8 @@ export interface MatchCondition {
   keyword: string;              // 匹配关键字（字段值包含此关键字即匹配）
 }
 
+export type FieldPrefixes = Record<string, string>;
+
 // 二维码解析规则接口
 export interface QRCodeRule {
   id: string;
@@ -41,6 +43,7 @@ export interface QRCodeRule {
   separator: string;      // 分隔符，如 "/"、","、"*"等
   fieldOrder: string[];   // 字段顺序，标准字段用原名称（如"model"），自定义字段用"custom:字段ID"格式
   customFieldIds?: string[]; // 关联的自定义字段ID列表（已弃用，保留兼容性）
+  fieldPrefixes?: FieldPrefixes; // 字段前缀配置，key 与 fieldOrder 保持一致
   isActive: boolean;      // 是否启用
   supplierName?: string;  // 供应商名称（可选）
   matchConditions?: MatchCondition[]; // 识别条件（可选，用于区分相同分隔符和字段数的规则）
@@ -839,6 +842,19 @@ const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDat
   }
 };
 
+const ensureRuleFieldPrefixesColumn = async (database: SQLite.SQLiteDatabase): Promise<void> => {
+  const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(qr_code_rules)');
+  const hasFieldPrefixes = columns.some(column => column.name === 'field_prefixes');
+
+  if (hasFieldPrefixes) {
+    return;
+  }
+
+  console.log('[DB Migration] 为二维码规则表添加字段前缀配置列...');
+  await database.execAsync('ALTER TABLE qr_code_rules ADD COLUMN field_prefixes TEXT');
+  console.log('[DB Migration] 字段前缀配置列添加完成');
+};
+
 // 初始化数据库
 export const initDatabase = async (): Promise<void> => {
   console.log('[initDatabase] 开始初始化...');
@@ -1069,6 +1085,7 @@ const performDatabaseInitialization = async (): Promise<void> => {
         is_active INTEGER DEFAULT 1,
         supplier_name TEXT,
         match_conditions TEXT,
+        field_prefixes TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -1168,6 +1185,7 @@ const performDatabaseInitialization = async (): Promise<void> => {
     `);
 
     await migrateInboundAndInventoryRecordTables(db);
+    await ensureRuleFieldPrefixesColumn(db);
 
     await db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_orders_warehouse_created
@@ -3622,8 +3640,12 @@ export const getAllRules = async (): Promise<QRCodeRule[]> => {
     
     return results.map(r => ({
       ...r,
+      description: r.description || '',
       fieldOrder: stringToJson<string[]>(r.field_order) || [],
+      customFieldIds: stringToJson<string[]>(r.custom_field_ids) || [],
+      fieldPrefixes: stringToJson<FieldPrefixes>(r.field_prefixes) || {},
       isActive: r.is_active === 1,
+      supplierName: r.supplier_name || undefined,
       matchConditions: stringToJson<MatchCondition[]>(r.match_conditions),
     })) as QRCodeRule[];
   } catch (error) {
@@ -3653,8 +3675,8 @@ export const addRule = async (rule: Omit<QRCodeRule, 'id' | 'created_at' | 'upda
     await database.runAsync(
       `INSERT INTO qr_code_rules (
         id, name, description, separator, field_order, custom_field_ids, is_active,
-        supplier_name, match_conditions, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        supplier_name, match_conditions, field_prefixes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         rule.name,
@@ -3665,6 +3687,7 @@ export const addRule = async (rule: Omit<QRCodeRule, 'id' | 'created_at' | 'upda
         rule.isActive ? 1 : 0,
         rule.supplierName || null,
         rule.matchConditions ? jsonToString(rule.matchConditions) : null,
+        rule.fieldPrefixes ? jsonToString(rule.fieldPrefixes) : null,
         isoDateTime,
         isoDateTime,
       ]
@@ -3697,6 +3720,12 @@ export const updateRule = async (id: string, updates: Partial<QRCodeRule>): Prom
       } else if (key === 'matchConditions' && value !== undefined) {
         updateFields.push('match_conditions = ?');
         values.push(jsonToString(value));
+      } else if (key === 'fieldPrefixes' && value !== undefined) {
+        updateFields.push('field_prefixes = ?');
+        values.push(jsonToString(value));
+      } else if (key === 'supplierName' && value !== undefined) {
+        updateFields.push('supplier_name = ?');
+        values.push(value || null);
       } else if (
         key !== 'id' &&
         key !== 'created_at' &&
@@ -3705,6 +3734,8 @@ export const updateRule = async (id: string, updates: Partial<QRCodeRule>): Prom
         key !== 'fieldOrder' &&
         key !== 'customFieldIds' &&
         key !== 'matchConditions' &&
+        key !== 'fieldPrefixes' &&
+        key !== 'supplierName' &&
         value !== undefined
       ) {
         updateFields.push(`${key} = ?`);
@@ -3763,8 +3794,12 @@ export const getRuleById = async (id: string): Promise<QRCodeRule | null> => {
 
     return {
       ...result,
+      description: result.description || '',
       fieldOrder: stringToJson<string[]>(result.field_order) || [],
+      customFieldIds: stringToJson<string[]>(result.custom_field_ids) || [],
+      fieldPrefixes: stringToJson<FieldPrefixes>(result.field_prefixes) || {},
       isActive: result.is_active === 1,
+      supplierName: result.supplier_name || undefined,
       matchConditions: stringToJson<MatchCondition[]>(result.match_conditions),
     } as QRCodeRule;
   } catch (error) {
@@ -4055,6 +4090,31 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
   }
 };
 
+const stripConfiguredFieldPrefix = (value: string, prefix?: string): string => {
+  const normalizedPrefix = prefix?.replace(/\s+/g, '').toLowerCase();
+  if (!normalizedPrefix) {
+    return value;
+  }
+
+  let consumedLength = 0;
+  let normalizedHead = '';
+
+  while (consumedLength < value.length && normalizedHead.length < normalizedPrefix.length) {
+    const char = value[consumedLength];
+    consumedLength += 1;
+
+    if (!/\s/.test(char)) {
+      normalizedHead += char.toLowerCase();
+    }
+  }
+
+  if (normalizedHead === normalizedPrefix) {
+    return value.slice(consumedLength).trim();
+  }
+
+  return value;
+};
+
 // 使用规则解析二维码内容
 export const parseWithRule = (
   content: string,
@@ -4079,10 +4139,11 @@ export const parseWithRule = (
   
   rule.fieldOrder.forEach((fieldName, index) => {
     if (index < parts.length) {
+      const parsedValue = stripConfiguredFieldPrefix(parts[index], rule.fieldPrefixes?.[fieldName]);
       if (isCustomField(fieldName)) {
-        customFields[getCustomFieldId(fieldName)] = parts[index];
+        customFields[getCustomFieldId(fieldName)] = parsedValue;
       } else {
-        standardFields[fieldName] = parts[index];
+        standardFields[fieldName] = parsedValue;
       }
     }
   });
@@ -4240,8 +4301,8 @@ export const importBackupData = async (backup: BackupData): Promise<{
           await database.runAsync(
             `INSERT OR REPLACE INTO qr_code_rules (
               id, name, description, separator, field_order, custom_field_ids,
-              is_active, supplier_name, match_conditions, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              is_active, supplier_name, match_conditions, field_prefixes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               rule.id,
               rule.name,
@@ -4252,6 +4313,7 @@ export const importBackupData = async (backup: BackupData): Promise<{
               rule.isActive ? 1 : 0,
               rule.supplierName || '',
               JSON.stringify(rule.matchConditions || []),
+              JSON.stringify(rule.fieldPrefixes || {}),
               rule.created_at || getISODateTime(),
               rule.updated_at || getISODateTime(),
             ]

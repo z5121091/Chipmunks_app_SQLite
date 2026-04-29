@@ -235,7 +235,7 @@ export default function RulesScreen() {
       separator: finalSeparator,
       fieldOrder: selectedFields,
       isActive: true,
-      supplierName: supplierName.trim() || undefined,
+      supplierName: supplierName.trim(),
       matchConditions: matchConditions.length > 0 ? matchConditions : [],
       // 提取自定义字段ID
       customFieldIds: selectedFields
