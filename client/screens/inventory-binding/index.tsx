@@ -432,7 +432,7 @@ export default function InventoryBindingScreen() {
     <View style={styles.emptyState}>
       <Feather name="hash" size={28} color={theme.textMuted} />
       <Text style={styles.emptyTitle}>暂无绑定数据</Text>
-      <Text style={styles.emptyDesc}>点击上方"添加"按钮创建</Text>
+      <Text style={styles.emptyDesc}>添加型号与存货编码的对应关系</Text>
     </View>
   ), [theme]);
 
@@ -444,7 +444,7 @@ export default function InventoryBindingScreen() {
           <Feather name="arrow-left" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>物料管理</Text>
+          <Text style={styles.title}>物料绑定</Text>
         </View>
       </View>
 
@@ -500,7 +500,7 @@ export default function InventoryBindingScreen() {
             {/* 列表区域 */}
             <View style={styles.listSection}>
               <View style={styles.listHeader}>
-                <Text style={styles.listTitle}>绑定列表</Text>
+                <Text style={styles.listTitle}>型号编码绑定</Text>
                 <TouchableOpacity style={styles.addSmallBtn}
                   activeOpacity={0.7} onPress={() => handleOpenModal()}
                 >

@@ -1244,8 +1244,8 @@ export default function OrdersScreen() {
             <Feather name="arrow-left" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <Text style={styles.title}>订单管理</Text>
-            <Text style={styles.subtitle}>点击订单展开查看物料</Text>
+            <Text style={styles.title}>出库订单</Text>
+            <Text style={styles.subtitle}>展开订单查看物料，按需拆包</Text>
           </View>
         </View>
         
@@ -1460,7 +1460,7 @@ export default function OrdersScreen() {
                   {searchText ? '未找到匹配的订单' : '暂无订单'}
                 </Text>
                 <Text style={styles.emptyTip}>
-                  {searchText ? '请尝试其他关键词' : '扫码时会自动创建订单'}
+                  {searchText ? '请尝试其他关键词' : '扫码出库时会自动创建订单'}
                 </Text>
               </View>
             }

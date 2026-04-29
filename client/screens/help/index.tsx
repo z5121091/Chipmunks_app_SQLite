@@ -33,7 +33,7 @@ const HELP_DATA: HelpModule[] = [
       {
         id: '1.1',
         title: '功能入口',
-        description: '首页采用高频作业优先布局：扫码入库、扫码出库放在第一视线，订单、盘点、物料、设置放在第二层级。',
+        description: '首页采用高频作业优先布局：扫码入库、扫码出库放在第一视线，出库订单、库存盘点、物料绑定、设置放在第二层级。',
       },
       {
         id: '1.2',
@@ -62,7 +62,7 @@ const HELP_DATA: HelpModule[] = [
       {
         id: '2.3',
         title: '供应商自动带出',
-        description: '型号已在物料管理中维护 → 自动带出绑定的供应商。型号未维护 → 供应商留空，需后续手动补充。',
+        description: '型号已在物料绑定中维护 → 自动带出绑定的供应商。型号未维护 → 供应商留空，需后续手动补充。',
       },
       {
         id: '2.4',
@@ -132,7 +132,7 @@ const HELP_DATA: HelpModule[] = [
   },
   {
     id: '4',
-    title: '订单管理',
+    title: '出库订单',
     icon: 'file-text',
     items: [
       {
@@ -148,8 +148,8 @@ const HELP_DATA: HelpModule[] = [
       {
         id: '4.3',
         title: '唯一拆包入口',
-        description: '订单管理是唯一的拆包入口。适用于整包货品客户只拿部分数量的情况。',
-        tip: '扫码出库页面不支持拆包，如需拆包请到订单管理操作。',
+        description: '出库订单是唯一的拆包入口。适用于整包货品客户只拿部分数量的情况。',
+        tip: '扫码出库页面不支持拆包，如需拆包请到出库订单操作。',
       },
       {
         id: '4.4',
@@ -175,7 +175,7 @@ const HELP_DATA: HelpModule[] = [
   },
   {
     id: '5',
-    title: '盘点管理',
+    title: '库存盘点',
     icon: 'check-square',
     items: [
       {
@@ -219,13 +219,13 @@ const HELP_DATA: HelpModule[] = [
   },
   {
     id: '6',
-    title: '物料管理',
+    title: '物料绑定',
     icon: 'git-merge',
     items: [
       {
         id: '6.1',
         title: '功能说明',
-        description: '物料管理用于维护型号与供应商的绑定关系。后续扫码时，系统通过"型号"匹配自动带出供应商。',
+        description: '物料绑定用于维护扫描型号、存货编码和供应商的对应关系。后续扫码时，系统通过"型号"匹配自动带出编码和供应商。',
       },
       {
         id: '6.2',
@@ -257,17 +257,17 @@ const HELP_DATA: HelpModule[] = [
   },
   {
     id: '7',
-    title: '系统设置',
+    title: '设置',
     icon: 'tool',
     items: [
       {
         id: '7.1',
-        title: '基础设置',
-        description: '包含仓库管理、扫码提示音开关、版本检测与更新下载。',
+        title: '常用设置',
+        description: '包含仓库档案、扫码提示音开关、版本检测与更新下载。',
       },
       {
         id: '7.2',
-        title: '仓库管理',
+        title: '仓库档案',
         description: '可新增、编辑、删除仓库，并设置默认仓库。',
       },
       {
@@ -283,7 +283,7 @@ const HELP_DATA: HelpModule[] = [
       },
       {
         id: '7.5',
-        title: '解析配置 - 解析规则',
+        title: '扫码解析 - 解析规则',
         description: '配置二维码解析规则，包含规则名称、分隔符、字段顺序三部分。系统根据规则解析扫码内容。',
         tip: '可添加多条规则，设置匹配条件实现自动识别。',
       },
@@ -310,18 +310,18 @@ const HELP_DATA: HelpModule[] = [
       },
       {
         id: '7.6',
-        title: '解析配置 - 自定义字段',
+        title: '扫码解析 - 自定义字段',
         description: '可扩展自定义字段，在解析规则中添加使用。适用于标准字段无法满足的特殊扫码格式。',
       },
       {
         id: '7.6.1',
-        title: '解析配置 - 前缀配置',
+        title: '扫码解析 - 前缀配置',
         description: '可按解析规则为每个字段配置前缀，扫码解析时自动去除 PART NO.:、QTY: 等标签文字。',
         tip: '前缀匹配不区分大小写，并会兼容前缀附近的空格差异。',
       },
       {
         id: '7.7',
-        title: '数据同步',
+        title: '电脑同步',
         description: '手动填写服务器IP和端口，对接电脑同步脚本。',
         tip: '需配合电脑端同步脚本使用。',
       },
@@ -332,7 +332,7 @@ const HELP_DATA: HelpModule[] = [
       },
       {
         id: '7.8',
-        title: '备份与恢复',
+        title: '数据维护',
         description: '备份：解析规则、自定义字段、物料绑定、仓库、同步服务器配置。点击"恢复"可一键还原所有配置。',
       },
       {

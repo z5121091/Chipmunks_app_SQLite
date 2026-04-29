@@ -226,7 +226,7 @@ export default function HomeScreen() {
         >
           <View style={styles.hero}>
             <Text style={styles.heroEyebrow}>掌上仓库</Text>
-            <Text style={styles.heroTitle}>仓库作业台</Text>
+            <Text style={styles.heroTitle}>今日作业</Text>
           </View>
 
           <View style={styles.workbench}>

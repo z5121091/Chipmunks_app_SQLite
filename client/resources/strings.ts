@@ -15,10 +15,10 @@ export const Str = {
   // 首页模块名称
   moduleInbound: '扫码入库',
   moduleOutbound: '扫码出库',
-  moduleOrders: '订单管理',
-  moduleInventory: '盘点管理',
-  moduleMaterials: '物料管理',
-  moduleSettings: '系统设置',
+  moduleOrders: '出库订单',
+  moduleInventory: '库存盘点',
+  moduleMaterials: '物料绑定',
+  moduleSettings: '设置',
 
   // ============================================
   // 通用按钮与操作
@@ -107,7 +107,7 @@ export const Str = {
   // ============================================
   // 盘点模块
   // ============================================
-  inventoryTitle: '盘点管理',
+  inventoryTitle: '库存盘点',
   inventoryWhole: '整包',
   inventoryPartial: '拆包',
   inventorySaved: '已保存',
@@ -118,7 +118,7 @@ export const Str = {
   // ============================================
   // 订单模块
   // ============================================
-  ordersTitle: '订单管理',
+  ordersTitle: '出库订单',
   ordersAll: '全部',
   ordersPending: '待处理',
   ordersProcessing: '处理中',
@@ -143,14 +143,14 @@ export const Str = {
   // ============================================
   // 设置模块
   // ============================================
-  settingsTitle: '系统设置',
+  settingsTitle: '设置',
   settingsAbout: '关于应用',
   settingsVersion: '当前版本',
   settingsCheckUpdate: '检查更新',
   settingsParseRules: '解析规则',
   settingsCustomFields: '自定义字段',
-  settingsDataSync: '数据同步',
-  settingsServerConfig: '服务器配置',
+  settingsDataSync: '电脑同步',
+  settingsServerConfig: '同步服务配置',
   settingsClearCache: '清除缓存',
   settingsHelp: '使用帮助',
   settingsChangelog: '更新日志',

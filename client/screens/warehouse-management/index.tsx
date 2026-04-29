@@ -159,7 +159,7 @@ export default function WarehouseManagementScreen() {
           <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
             <Feather name="arrow-left" size={20} color={theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.title}>仓库管理</Text>
+          <Text style={styles.title}>仓库档案</Text>
         </View>
 
         {/* 仓库列表 */}

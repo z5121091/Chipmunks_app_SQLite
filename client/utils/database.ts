@@ -4165,10 +4165,7 @@ export const clearAllBusinessData = async (): Promise<void> => {
     await database.runAsync('DELETE FROM inbound_records');
     await database.runAsync('DELETE FROM inbound_summary');
     await database.runAsync('DELETE FROM inventory_check_records');
-    // 清空解析规则和自定义字段（配置数据）
-    await database.runAsync('DELETE FROM qr_code_rules');
-    await database.runAsync('DELETE FROM custom_fields');
-    // 保留：warehouses、inventory_bindings、system_config
+    // 保留：qr_code_rules、custom_fields、warehouses、inventory_bindings、system_config
   } catch (error) {
     console.error('清空业务数据失败:', error);
     throw error;

@@ -1090,15 +1090,15 @@ export default function SettingsScreen() {
           <Text style={styles.title}>设置</Text>
         </View>
         
-        {/* ========== 基础配置 ========== */}
+        {/* ========== 常用设置 ========== */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>基础配置</Text>
+          <Text style={styles.sectionTitle}>常用设置</Text>
         </View>
         
         <View style={{ gap: getSpacing().md }}>
           {renderMenuCard(
-            '仓库管理',
-            '添加、编辑仓库信息',
+            '仓库档案',
+            '维护仓库与默认仓库',
             'box',
             theme.primary,
             () => router.push('/warehouse-management')
@@ -1106,7 +1106,7 @@ export default function SettingsScreen() {
           
           {renderSwitchCard(
             '扫码提示音',
-            '扫码成功/重复时播放提示音',
+            '扫码成功、重复、异常反馈',
             'radio',
             theme.primary,
             soundEnabled,
@@ -1124,15 +1124,15 @@ export default function SettingsScreen() {
           )}
         </View>
         
-        {/* ========== 解析配置 ========== */}
+        {/* ========== 扫码解析 ========== */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>解析配置</Text>
+          <Text style={styles.sectionTitle}>扫码解析</Text>
         </View>
         
         <View style={{ gap: getSpacing().md }}>
           {renderMenuCard(
             '解析规则',
-            '二维码解析规则配置',
+            '按分隔符识别二维码字段',
             'sliders',
             theme.accent,
             () => router.push('/rules'),
@@ -1143,7 +1143,7 @@ export default function SettingsScreen() {
           
           {renderMenuCard(
             '自定义字段',
-            '扩展物料信息字段',
+            '扩展二维码里的业务字段',
             'edit-3',
             theme.warning,
             () => router.push('/custom-fields'),
@@ -1154,16 +1154,16 @@ export default function SettingsScreen() {
 
           {renderMenuCard(
             '前缀配置',
-            '去除字段前的标签文字',
+            '自动去除 PART NO.、QTY 等前缀',
             'type',
             theme.success,
             () => router.push('/rule-prefixes')
           )}
         </View>
         
-        {/* ========== 数据同步 ========== */}
+        {/* ========== 电脑同步 ========== */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>数据同步</Text>
+          <Text style={styles.sectionTitle}>电脑同步</Text>
         </View>
         
         {/* 服务器配置 */}
@@ -1236,7 +1236,7 @@ export default function SettingsScreen() {
         <View style={{ gap: getSpacing().sm }}>
           {renderMenuCard(
             '同步入库单',
-            '入库记录导出到电脑',
+            '导出入库记录到电脑',
             'file-plus',
             theme.success,
             handleSyncInbound,
@@ -1246,7 +1246,7 @@ export default function SettingsScreen() {
           
           {renderMenuCard(
             '同步出库单',
-            '出库物料导出到电脑',
+            '导出出库订单到电脑',
             'file-minus',
             theme.primary,
             handleSyncOutbound,
@@ -1256,7 +1256,7 @@ export default function SettingsScreen() {
           
           {renderMenuCard(
             '同步盘点单',
-            '盘点记录导出到电脑',
+            '导出库存盘点到电脑',
             'bar-chart-2',
             theme.accent,
             handleSyncInventory,
@@ -1265,8 +1265,8 @@ export default function SettingsScreen() {
           )}
           
           {renderMenuCard(
-            '导出盘点拆包标签',
-            '盘点拆包记录导出到电脑打印',
+            '同步盘点标签',
+            '导出盘点拆包标签打印数据',
             'printer',
             theme.purple,
             handleSyncInventoryPartial,
@@ -1275,8 +1275,8 @@ export default function SettingsScreen() {
           )}
           
           {renderMenuCard(
-            '同步标签数据',
-            '拆包标签导出到电脑打印',
+            '同步订单标签',
+            '导出订单拆包标签打印数据',
             'copy',
             theme.purple,
             handleSyncLabels,
@@ -1285,15 +1285,15 @@ export default function SettingsScreen() {
           )}
         </View>
         
-        {/* ========== 备份恢复 ========== */}
+        {/* ========== 数据维护 ========== */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>备份恢复</Text>
+          <Text style={styles.sectionTitle}>数据维护</Text>
         </View>
 
         <View style={{ gap: getSpacing().md }}>
           {renderMenuCard(
             '备份配置',
-            '导出：规则、字段、绑定、仓库、服务器',
+            '备份规则、字段、绑定、仓库、服务器',
             'save',
             theme.cyan,
             handleBackup,
@@ -1303,7 +1303,7 @@ export default function SettingsScreen() {
 
           {renderMenuCard(
             '恢复配置',
-            '从备份文件恢复全部配置',
+            '从配置备份恢复设置',
             'rotate-ccw',
             theme.purple,
             handleRestore,
@@ -1314,7 +1314,7 @@ export default function SettingsScreen() {
           {/* 数据库文件备份/恢复 */}
           {renderMenuCard(
             '备份数据库',
-            '导出完整数据库文件（所有数据）',
+            '导出完整数据库文件',
             'database',
             theme.success,
             handleDatabaseBackup,
@@ -1324,7 +1324,7 @@ export default function SettingsScreen() {
 
           {renderMenuCard(
             '恢复数据库',
-            '从备份文件恢复完整数据库',
+            '用数据库备份替换当前数据',
             'hard-drive',
             theme.warning,
             handleDatabaseRestore,
@@ -1334,17 +1334,17 @@ export default function SettingsScreen() {
 
           {renderMenuCard(
             '清空业务数据',
-            '清空订单、物料、标签数据',
+            '清空订单、扫码、入库、盘点、标签',
             'trash-2',
             theme.error,
             () => {
               alert.showConfirm(
                 '确认清空',
-                '确定要清空所有业务数据吗？\n\n将清空：订单、物料、标签、入库记录、盘点记录、解析规则、自定义字段\n保留：仓库、物料绑定',
+                '确定要清空所有业务数据吗？\n\n将清空：出库订单、物料扫码记录、拆包标签、入库记录、盘点记录\n保留：仓库、物料绑定、解析规则、自定义字段、服务器配置',
                 async () => {
                   try {
                     await clearAllBusinessData();
-                    alert.showSuccess('业务数据已清空');
+                    alert.showSuccess('业务数据已清空，配置已保留');
                     loadData();
                   } catch (error) {
                     console.error('清空数据失败:', error);

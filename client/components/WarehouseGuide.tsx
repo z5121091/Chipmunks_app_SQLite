@@ -27,7 +27,7 @@ interface GuideStep {
 const STEPS: GuideStep[] = [
   {
     title: '欢迎启用 Chipmunks 掌上仓库',
-    description: '添加仓库，轻松管理入库出库',
+    description: '先建立仓库档案，再开始入库、出库和盘点',
     icon: 'package',
   },
 ];
@@ -68,7 +68,7 @@ export function WarehouseGuide({ visible, onSkip, onGoToSettings }: WarehouseGui
                 onPress={onGoToSettings}
                 activeOpacity={0.7}
               >
-                <Text style={styles.nextButtonText}>去设置</Text>
+                <Text style={styles.nextButtonText}>去建仓库</Text>
               </TouchableOpacity>
             </View>
           </View>
