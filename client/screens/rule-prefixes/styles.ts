@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { BorderRadius, BorderWidth, Spacing, Theme } from '@/constants-theme';
+import { BorderRadius, BorderWidth, Spacing, Theme } from '@/constants/theme';
 import { withAlpha } from '@/utils/colors';
 import { rf, rs } from '@/utils/responsive';
 
@@ -33,21 +33,20 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
   listContent: {
     padding: Spacing.md,
-    gap: Spacing.sm,
   },
   emptyListContent: {
-    flex: 1,
+    flexGrow: 1,
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.md,
     backgroundColor: withAlpha(theme.success, 0.08),
+    borderRadius: BorderRadius.lg,
     borderWidth: BorderWidth.normal,
-    borderColor: withAlpha(theme.success, 0.22),
+    borderColor: withAlpha(theme.success, 0.2),
   },
   infoIcon: {
     width: rs(34),
@@ -65,36 +64,35 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
   },
   ruleCard: {
     padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
     backgroundColor: theme.backgroundDefault,
+    borderRadius: BorderRadius.lg,
     borderWidth: BorderWidth.thick,
     borderColor: theme.border,
   },
   ruleHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
   ruleTitleWrap: {
     flex: 1,
-    marginRight: Spacing.sm,
   },
   ruleName: {
     fontSize: rf(16),
     fontWeight: '700',
     color: theme.textPrimary,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   ruleDescription: {
-    fontSize: rf(13),
-    lineHeight: rf(18),
+    fontSize: rf(12),
+    lineHeight: rf(17),
     color: theme.textMuted,
   },
   ruleMetaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: Spacing.xs,
-    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
   },
   metaPill: {
     flexDirection: 'row',
@@ -102,71 +100,68 @@ export const createStyles = (theme: Theme) => StyleSheet.create({
     gap: 4,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
+    borderRadius: BorderRadius.full,
     backgroundColor: theme.backgroundTertiary,
   },
   metaText: {
     fontSize: rf(11),
-    fontWeight: '600',
     color: theme.textSecondary,
+    fontWeight: '500',
   },
   badgeRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   disabledBadge: {
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: withAlpha(theme.error, 0.12),
-    borderWidth: BorderWidth.normal,
-    borderColor: withAlpha(theme.error, 0.24),
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    backgroundColor: withAlpha(theme.warning, 0.12),
   },
   disabledBadgeText: {
     fontSize: rf(11),
-    fontWeight: '700',
-    color: theme.error,
+    fontWeight: '600',
+    color: theme.warning,
   },
   prefixBadge: {
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
     backgroundColor: withAlpha(theme.success, 0.12),
-    borderWidth: BorderWidth.normal,
-    borderColor: withAlpha(theme.success, 0.24),
   },
   prefixBadgeText: {
     fontSize: rf(11),
-    fontWeight: '700',
+    fontWeight: '600',
     color: theme.success,
+  },
+  itemGap: {
+    height: Spacing.sm,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing['4xl'],
-    gap: Spacing.sm,
   },
   emptyIcon: {
-    width: rs(60),
-    height: rs(60),
-    borderRadius: BorderRadius.full,
+    width: rs(64),
+    height: rs(64),
+    borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: theme.backgroundTertiary,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
     fontSize: rf(16),
     fontWeight: '700',
     color: theme.textPrimary,
-    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   emptyText: {
     fontSize: rf(13),
     color: theme.textMuted,
-  },
-  itemGap: {
-    height: Spacing.sm,
   },
 });
