@@ -1099,7 +1099,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '仓库管理',
             '添加、编辑仓库信息',
-            'home',
+            'box',
             theme.primary,
             () => router.push('/warehouse-management')
           )}
@@ -1107,7 +1107,7 @@ export default function SettingsScreen() {
           {renderSwitchCard(
             '扫码提示音',
             '扫码成功/重复时播放提示音',
-            'volume-2',
+            'radio',
             theme.primary,
             soundEnabled,
             toggleSound
@@ -1144,7 +1144,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '自定义字段',
             '扩展物料信息字段',
-            'plus-square',
+            'edit-3',
             theme.warning,
             () => router.push('/custom-fields'),
             false,
@@ -1155,7 +1155,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '前缀配置',
             '去除字段前的标签文字',
-            'tag',
+            'type',
             theme.success,
             () => router.push('/rule-prefixes')
           )}
@@ -1237,7 +1237,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '同步入库单',
             '入库记录导出到电脑',
-            'download-cloud',
+            'file-plus',
             theme.success,
             handleSyncInbound,
             !canSync,
@@ -1247,7 +1247,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '同步出库单',
             '出库物料导出到电脑',
-            'upload-cloud',
+            'file-minus',
             theme.primary,
             handleSyncOutbound,
             !canSync,
@@ -1257,7 +1257,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '同步盘点单',
             '盘点记录导出到电脑',
-            'file-text',
+            'bar-chart-2',
             theme.accent,
             handleSyncInventory,
             !canSync,
@@ -1267,7 +1267,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '导出盘点拆包标签',
             '盘点拆包记录导出到电脑打印',
-            'tag',
+            'printer',
             theme.purple,
             handleSyncInventoryPartial,
             !canSync,
@@ -1277,7 +1277,7 @@ export default function SettingsScreen() {
           {renderMenuCard(
             '同步标签数据',
             '拆包标签导出到电脑打印',
-            'tag',
+            'copy',
             theme.purple,
             handleSyncLabels,
             !canSync,
@@ -1421,7 +1421,7 @@ export default function SettingsScreen() {
               activeOpacity={0.7}
               onPress={() => router.push('/changelog')}
             >
-              <Feather name="file-text" size={rs(14)} color={theme.textMuted} style={styles.changelogIconWrapper} />
+              <Feather name="clock" size={rs(14)} color={theme.textMuted} style={styles.changelogIconWrapper} />
               <Text style={styles.changelogText}>更新日志</Text>
               <Feather name="chevron-right" size={rs(14)} color={theme.textMuted} />
             </TouchableOpacity>

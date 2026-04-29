@@ -19,7 +19,7 @@ interface HelpItem {
 interface HelpModule {
   id: string;
   title: string;
-  icon: 'home' | 'archive' | 'send' | 'clipboard' | 'link' | 'settings' | 'file-text';
+  icon: 'home' | 'log-in' | 'truck' | 'check-square' | 'git-merge' | 'tool' | 'file-text';
   items: HelpItem[];
 }
 
@@ -33,7 +33,7 @@ const HELP_DATA: HelpModule[] = [
       {
         id: '1.1',
         title: '功能入口',
-        description: '首页采用2×3网格布局，展示六大功能入口：扫码入库、扫码出库、订单管理、盘点管理、物料管理、系统设置。',
+        description: '首页采用高频作业优先布局：扫码入库、扫码出库放在第一视线，订单、盘点、物料、设置放在第二层级。',
       },
       {
         id: '1.2',
@@ -45,7 +45,7 @@ const HELP_DATA: HelpModule[] = [
   {
     id: '2',
     title: '扫码入库',
-    icon: 'archive',
+    icon: 'log-in',
     items: [
       {
         id: '2.1',
@@ -90,7 +90,7 @@ const HELP_DATA: HelpModule[] = [
   {
     id: '3',
     title: '扫码出库',
-    icon: 'send',
+    icon: 'truck',
     items: [
       {
         id: '3.1',
@@ -176,7 +176,7 @@ const HELP_DATA: HelpModule[] = [
   {
     id: '5',
     title: '盘点管理',
-    icon: 'clipboard',
+    icon: 'check-square',
     items: [
       {
         id: '5.1',
@@ -220,7 +220,7 @@ const HELP_DATA: HelpModule[] = [
   {
     id: '6',
     title: '物料管理',
-    icon: 'link',
+    icon: 'git-merge',
     items: [
       {
         id: '6.1',
@@ -258,7 +258,7 @@ const HELP_DATA: HelpModule[] = [
   {
     id: '7',
     title: '系统设置',
-    icon: 'settings',
+    icon: 'tool',
     items: [
       {
         id: '7.1',

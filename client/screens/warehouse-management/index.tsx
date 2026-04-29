@@ -205,7 +205,7 @@ export default function WarehouseManagementScreen() {
         ) : (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon}>
-              <Feather name="home" size={36} color={theme.textMuted} />
+              <Feather name="map-pin" size={36} color={theme.textMuted} />
             </View>
             <Text style={styles.emptyTitle}>暂无仓库</Text>
             <Text style={styles.emptyDesc}>点击下方按钮添加您的第一个仓库</Text>

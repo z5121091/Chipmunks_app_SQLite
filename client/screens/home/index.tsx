@@ -139,7 +139,7 @@ export default function HomeScreen() {
     {
       id: 'inbound',
       name: Str.moduleInbound,
-      icon: 'archive',
+      icon: 'log-in',
       color: moduleColors[0],
       route: '/inbound',
       priority: 'primary',
@@ -148,7 +148,7 @@ export default function HomeScreen() {
     {
       id: 'outbound',
       name: Str.moduleOutbound,
-      icon: 'send',
+      icon: 'truck',
       color: moduleColors[1],
       route: '/outbound',
       priority: 'primary',
@@ -161,34 +161,34 @@ export default function HomeScreen() {
       color: moduleColors[2],
       route: '/orders',
       priority: 'secondary',
-      action: '订单查询',
+      action: '查单拆包',
     },
     {
       id: 'inventory',
       name: Str.moduleInventory,
-      icon: 'clipboard',
+      icon: 'check-square',
       color: moduleColors[3],
       route: '/inventory',
       priority: 'secondary',
-      action: '库存盘点',
+      action: '扫码盘点',
     },
     {
       id: 'material',
       name: Str.moduleMaterials,
-      icon: 'link',
+      icon: 'git-merge',
       color: moduleColors[4],
       route: '/inventory-binding',
       priority: 'secondary',
-      action: '编码绑定',
+      action: '型号编码',
     },
     {
       id: 'settings',
       name: Str.moduleSettings,
-      icon: 'settings',
+      icon: 'tool',
       color: moduleColors[5],
       route: '/settings',
       priority: 'secondary',
-      action: '系统配置',
+      action: '参数维护',
     },
   ];
 
@@ -238,7 +238,7 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.secondarySection}>
-              <Text style={styles.sectionLabel}>查询配置</Text>
+              <Text style={styles.sectionLabel}>单据与配置</Text>
               <View style={styles.secondaryGrid}>
                 {secondaryModules.map(renderSecondaryCard)}
               </View>

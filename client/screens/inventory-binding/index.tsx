@@ -430,7 +430,7 @@ export default function InventoryBindingScreen() {
   // 空状态组件
   const renderEmptyState = useCallback(() => (
     <View style={styles.emptyState}>
-      <Feather name="link" size={28} color={theme.textMuted} />
+      <Feather name="hash" size={28} color={theme.textMuted} />
       <Text style={styles.emptyTitle}>暂无绑定数据</Text>
       <Text style={styles.emptyDesc}>点击上方"添加"按钮创建</Text>
     </View>
@@ -467,7 +467,7 @@ export default function InventoryBindingScreen() {
             {/* 统计 + 操作按钮 */}
             <View style={styles.topSection}>
               <View style={styles.statsCard}>
-                <Feather name="link" size={20} color={theme.primary} />
+                <Feather name="git-merge" size={20} color={theme.primary} />
                 <Text style={styles.statsNumber}>{bindings.length}</Text>
                 <Text style={styles.statsLabel}>条绑定</Text>
               </View>
