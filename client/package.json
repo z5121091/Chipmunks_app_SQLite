@@ -9,6 +9,7 @@
     "postinstall": "npm run install-missing",
     "install-missing": "node ./scripts/install-missing-deps.js",
     "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
     "start": "expo start --web --clear",
     "test": "jest --watchAll",
     "android": "expo run:android",

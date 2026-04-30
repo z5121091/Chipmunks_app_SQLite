@@ -7,6 +7,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { APP_VERSION } from '@/constants/version';
 import { STORAGE_KEYS, ExportType, ExportCountData } from '@/constants/config';
 import { getISODateTime, getExportDateTime, formatDateTime } from './time';
+import { parseQuantity } from './quantity';
 
 // 使用 any 绕过类型检查
 const FS = FileSystem as any;
@@ -437,8 +438,8 @@ const debugDumpTables = () => {
 };
 
 // 全局暴露调试函数（在控制台可以调用）
-if (typeof global !== 'undefined') {
-  (global as any).debugDumpTables = debugDumpTables;
+if (typeof globalThis !== 'undefined') {
+  (globalThis as typeof globalThis & { debugDumpTables?: typeof debugDumpTables }).debugDumpTables = debugDumpTables;
 }
 
 // 解析 WHERE 条件并过滤数据
@@ -3390,6 +3391,11 @@ export const addInboundRecord = async (record: Omit<InboundRecord, 'id' | 'creat
 
     const database = getDb();
     const id = generateId();
+    const quantity = parseQuantity(record.quantity, { min: 1 });
+
+    if (quantity === null) {
+      throw new Error('入库数量无效，必须为大于 0 的整数');
+    }
 
     await database.runAsync(
       `INSERT INTO inbound_records (
@@ -3405,7 +3411,7 @@ export const addInboundRecord = async (record: Omit<InboundRecord, 'id' | 'creat
         record.inventory_code || null,
         record.scan_model,
         record.batch || null,
-        parseInt(String(record.quantity), 10) || 0,  // quantity: INTEGER，确保转换为number
+        quantity,
         record.in_date,
         record.notes || null,
         record.rawContent || null,
@@ -3618,6 +3624,18 @@ export const addInventoryCheckRecord = async (record: Omit<InventoryCheckRecord,
 
     const database = getDb();
     const id = generateId();
+    const quantity = parseQuantity(record.quantity, { min: 1 });
+    const actualQuantity = record.actual_quantity !== null && record.actual_quantity !== undefined
+      ? parseQuantity(record.actual_quantity, { min: 0 })
+      : null;
+
+    if (quantity === null) {
+      throw new Error('盘点数量无效，必须为大于 0 的整数');
+    }
+
+    if (record.actual_quantity !== null && record.actual_quantity !== undefined && actualQuantity === null) {
+      throw new Error('实际盘点数量无效，必须为不小于 0 的整数');
+    }
     
     await database.runAsync(
       `INSERT INTO inventory_check_records (
@@ -3633,9 +3651,9 @@ export const addInventoryCheckRecord = async (record: Omit<InventoryCheckRecord,
         record.inventory_code,
         record.scan_model,
         record.batch,
-        parseInt(String(record.quantity), 10) || 0,  // quantity: INTEGER，确保转换为number
+        quantity,
         record.check_type,
-        record.actual_quantity !== null && record.actual_quantity !== undefined ? parseInt(String(record.actual_quantity), 10) : null,  // actual_quantity: INTEGER，确保转换为number
+        actualQuantity,
         record.check_date,
         record.notes || null,
         getISODateTime(),
@@ -3956,7 +3974,63 @@ export const deleteCustomField = async (id: string): Promise<void> => {
     }
 
     const database = getDb();
-    await database.runAsync('DELETE FROM custom_fields WHERE id = ?', [id.trim()]);
+    const trimmedId = id.trim();
+    const customFieldKey = createCustomFieldKey(trimmedId);
+    const rules = await database.getAllAsync<any>('SELECT * FROM qr_code_rules');
+
+    await database.execAsync('BEGIN IMMEDIATE TRANSACTION');
+
+    try {
+      for (const rawRule of rules) {
+        const rule = normalizeRuleRecord(rawRule);
+        const removedFieldIndex = rule.fieldOrder.findIndex(field => field === customFieldKey);
+
+        if (removedFieldIndex === -1 && !(rule.customFieldIds || []).includes(trimmedId)) {
+          continue;
+        }
+
+        const nextFieldOrder = rule.fieldOrder.filter(field => field !== customFieldKey);
+        const nextCustomFieldIds = (rule.customFieldIds || []).filter(fieldId => fieldId !== trimmedId);
+        const nextFieldPrefixes = Object.fromEntries(
+          Object.entries(rule.fieldPrefixes || {}).filter(([fieldKey]) => fieldKey !== customFieldKey)
+        ) as FieldPrefixes;
+        const nextMatchConditions = (rule.matchConditions || []).flatMap(condition => {
+          if (removedFieldIndex === -1) {
+            return [condition];
+          }
+
+          if (condition.fieldIndex === removedFieldIndex) {
+            return [];
+          }
+
+          if (condition.fieldIndex > removedFieldIndex) {
+            return [{ ...condition, fieldIndex: condition.fieldIndex - 1 }];
+          }
+
+          return [condition];
+        });
+
+        await database.runAsync(
+          `UPDATE qr_code_rules
+           SET field_order = ?, custom_field_ids = ?, field_prefixes = ?, match_conditions = ?, updated_at = ?
+           WHERE id = ?`,
+          [
+            jsonToString(nextFieldOrder),
+            jsonToString(nextCustomFieldIds),
+            jsonToString(nextFieldPrefixes),
+            jsonToString(nextMatchConditions),
+            getISODateTime(),
+            rule.id,
+          ]
+        );
+      }
+
+      await database.runAsync('DELETE FROM custom_fields WHERE id = ?', [trimmedId]);
+      await database.execAsync('COMMIT');
+    } catch (ruleCleanupError) {
+      await database.execAsync('ROLLBACK');
+      throw ruleCleanupError;
+    }
   } catch (error) {
     console.error('[deleteCustomField] 删除自定义字段失败:', error);
     throw error;
@@ -4339,6 +4413,7 @@ export const clearAllDataV3 = async (): Promise<void> => {
     await database.runAsync('DELETE FROM unpack_records');
     await database.runAsync('DELETE FROM print_history');
     await database.runAsync('DELETE FROM inbound_records');
+    await database.runAsync('DELETE FROM inbound_summary');
     await database.runAsync('DELETE FROM inventory_check_records');
     await database.runAsync('DELETE FROM inventory_bindings');
     await database.runAsync('DELETE FROM warehouses');
@@ -4766,6 +4841,7 @@ export const exportDatabaseFile = async (): Promise<{
 export const importDatabaseFile = async (): Promise<{
   success: boolean;
   message: string;
+  needRestart?: boolean;
   stats?: {
     orders: number;
     materials: number;

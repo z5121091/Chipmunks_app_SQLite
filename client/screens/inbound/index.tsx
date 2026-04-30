@@ -32,8 +32,10 @@ import {
   getSupplierByModel,
   initDatabase,
   getAllMaterials,
+  generateId,
 } from '@/utils/database';
 import { isQRCode } from '@/utils/qrcodeParser';
+import { parseQuantity } from '@/utils/quantity';
 import { Spacing } from '@/constants/theme';
 import { Feather, FontAwesome6 } from '@expo/vector-icons';
 import { feedbackSuccess, feedbackError, feedbackWarning, feedbackDuplicate, feedbackConfirm, useFeedbackCleanup } from '@/utils/feedback';
@@ -492,7 +494,18 @@ export default function InboundScreen() {
       }
 
       const parsedRecord = parsed;
-      const quantity = parseInt(parsedRecord.quantity || '1', 10);
+      const quantity = parseQuantity(parsedRecord.quantity, { min: 1 });
+
+      if (quantity === null) {
+        showToast('⚠️ 数量字段无效，必须为大于 0 的整数', 'error');
+        feedbackError();
+        console.error('[扫码入库] 数量字段无效:', {
+          code,
+          quantity: parsedRecord.quantity,
+          model: parsedRecord.model,
+        });
+        return;
+      }
 
       // 查找存货编码和供应商
       const inventoryCode = await getInventoryCodeByModel(parsedRecord.model);
@@ -541,7 +554,7 @@ export default function InboundScreen() {
 
       // 新增记录（保存原始记录，不合并数量）
       const newRecord: ScanRecord = {
-        id: Date.now().toString(),
+        id: generateId(),
         model: parsedRecord.model,
         batch: parsedRecord.batch,
         quantity,

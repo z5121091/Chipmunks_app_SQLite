@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
-  ScrollView,
   TouchableOpacity,
   Text,
   RefreshControl,
   Animated,
   TextInput,
+  FlatList,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Feather, FontAwesome6 } from '@expo/vector-icons';
@@ -222,7 +222,7 @@ export default function LabelsScreen() {
   };
 
   // 渲染标签卡片
-  const renderUnpackCard = (record: UnpackRecord) => {
+  const renderUnpackCard = useCallback(({ item: record }: { item: UnpackRecord }) => {
     const isSelected = selectedIds.has(record.id);
     const isShipped = record.label_type === 'shipped';
     // 发货标签显示新追踪码，剩余标签显示原追踪码
@@ -230,7 +230,6 @@ export default function LabelsScreen() {
 
     return (
       <AnimatedLabelCard 
-        key={record.id} 
         onPress={() => toggleSelect(record.id)}
         style={styles.unpackCardWrapper}
       >
@@ -340,7 +339,7 @@ export default function LabelsScreen() {
         </View>
       </AnimatedLabelCard>
     );
-  };
+  }, [selectedIds, styles, theme]);
 
   // 空状态
   const renderEmpty = () => (
@@ -478,17 +477,25 @@ export default function LabelsScreen() {
       )}
 
       {/* 列表 */}
-      <ScrollView
+      <FlatList
         style={styles.container}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          filteredRecords.length === 0 ? { flexGrow: 1 } : null,
+        ]}
+        data={filteredRecords}
+        renderItem={renderUnpackCard}
+        keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
-        {filteredRecords.length > 0
-          ? filteredRecords.map(renderUnpackCard)
-          : renderEmpty()}
-      </ScrollView>
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={12}
+        maxToRenderPerBatch={16}
+        windowSize={7}
+        removeClippedSubviews
+        ListEmptyComponent={renderEmpty}
+      />
       
       {/* 自定义弹窗 */}
       {alert.AlertComponent}

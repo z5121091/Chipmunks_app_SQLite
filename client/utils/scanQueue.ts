@@ -40,7 +40,7 @@ class ScanQueue {
   private queue: QueueItem[] = [];
   private isProcessing = false;
   private config: BatchConfig;
-  private timer: NodeJS.Timeout | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
   private listeners: Set<() => void> = new Set();
 
   constructor(config: Partial<BatchConfig> = {}) {

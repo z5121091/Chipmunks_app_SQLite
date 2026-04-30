@@ -43,9 +43,12 @@ export function createContext<ContextType>(options: CreateContextOptions = {}) {
 
     if (!context && strict) {
       const error = new Error(errorMessage);
+      const captureStackTrace = (Error as ErrorConstructor & {
+        captureStackTrace?: (targetObject: object, constructorOpt?: Function) => void;
+      }).captureStackTrace;
 
       error.name = 'ContextError';
-      Error.captureStackTrace?.(error, useContext);
+      captureStackTrace?.(error, useContext);
       throw error;
     }
 

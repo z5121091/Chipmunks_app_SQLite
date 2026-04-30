@@ -7,6 +7,7 @@ import * as Updates from 'expo-updates';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Base64 } from 'js-base64';
 import { UPDATE_CONFIG, STORAGE_KEYS } from '@/constants/config';
 
 // 使用 any 绕过类型检查
@@ -28,8 +29,8 @@ export type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'erro
  */
 export const extractDisplayUrl = (url: string): string => {
   try {
-    const match = url.match(/https?:\/\/([^:@]+:[^:@]+@)?([^/]+)/);
-    return match ? match[0] : url;
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}`;
   } catch {
     return url;
   }
@@ -42,12 +43,13 @@ export const parseAuthFromUrl = (
   url: string
 ): { baseUrl: string; username: string; password: string } | null => {
   try {
-    const match = url.match(/https?:\/\/([^:@]+):([^:@]+)@([^/]+)/);
-    if (match) {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password) {
+      const baseUrl = `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
       return {
-        baseUrl: `http://${match[3]}`,
-        username: match[1],
-        password: match[2],
+        baseUrl,
+        username: decodeURIComponent(parsed.username),
+        password: decodeURIComponent(parsed.password),
       };
     }
     return null;
@@ -60,30 +62,7 @@ export const parseAuthFromUrl = (
  * Base64 编码（兼容 Android 7.0）
  */
 export const base64Encode = (str: string): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-  let output = '';
-  let i = 0;
-  
-  while (i < str.length) {
-    const a = str.charCodeAt(i++);
-    const b = i < str.length ? str.charCodeAt(i++) : 0;
-    const c = i < str.length ? str.charCodeAt(i++) : 0;
-    
-    const enc1 = a >> 2;
-    const enc2 = ((a & 3) << 4) | (b >> 4);
-    const enc3 = ((b & 15) << 2) | (c >> 6);
-    const enc4 = c & 63;
-    
-    if (i - 2 > str.length) {
-      output += chars.charAt(enc1) + chars.charAt(enc2) + '==';
-    } else if (i - 1 > str.length) {
-      output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + '=';
-    } else {
-      output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
-    }
-  }
-  
-  return output;
+  return Base64.encode(str);
 };
 
 /**

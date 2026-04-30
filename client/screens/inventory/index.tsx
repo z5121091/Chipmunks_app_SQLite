@@ -32,8 +32,10 @@ import {
   InventoryCheckRecord,
   initDatabase,
   getAllMaterials,
+  generateId,
 } from '@/utils/database';
 import { isQRCode } from '@/utils/qrcodeParser';
+import { parseQuantity } from '@/utils/quantity';
 import { Spacing } from '@/constants/theme';
 import { feedbackSuccess, feedbackError, feedbackWarning, feedbackDuplicate, feedbackConfirm, useFeedbackCleanup } from '@/utils/feedback';
 import { useToast } from '@/utils/toast';
@@ -499,7 +501,7 @@ export default function InventoryScreen() {
       const { standardFields, customFields } = parseWithRule(code, rule);
       const model = standardFields.model || '';
       const batch = standardFields.batch || '';
-      const quantity = parseInt(standardFields.quantity || '1', 10);
+      const quantity = parseQuantity(standardFields.quantity, { min: 1 });
       const version = standardFields.version || '';
 
 
@@ -507,6 +509,13 @@ export default function InventoryScreen() {
         showToast('无法识别型号信息', 'error');
         feedbackError();
         console.error('[盘点] 无法识别型号信息');
+        return;
+      }
+
+      if (quantity === null) {
+        showToast('数量字段无效，必须为大于 0 的整数', 'error');
+        feedbackError();
+        console.error('[盘点] 数量字段无效:', { code, quantity: standardFields.quantity, model });
         return;
       }
 
@@ -532,7 +541,7 @@ export default function InventoryScreen() {
 
       // 新增记录
       const newRecord: ScanRecord = {
-        id: Date.now().toString(),
+        id: generateId(),
         traceCode: code, // 追溯码
         model,
         batch,
@@ -697,8 +706,8 @@ export default function InventoryScreen() {
   const handleConfirmQuantity = () => {
     if (!editingRecord) return;
 
-    const qty = parseInt(quantityInput, 10);
-    if (isNaN(qty) || qty < 0) {
+    const qty = parseQuantity(quantityInput, { min: 0 });
+    if (qty === null) {
       showToast('请输入有效数量', 'warning');
       return;
     }
