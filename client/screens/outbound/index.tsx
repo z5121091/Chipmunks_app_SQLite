@@ -147,7 +147,8 @@ export default function PDAScanScreen() {
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingInputRef = useRef('');
+  const liveInputValueRef = useRef('');
+  const pendingScanCodesRef = useRef<string[]>([]);
   const scannerFocusBlockedRef = useRef(false);
   const orderNoRef = useRef(''); // 🔥 添加 orderNoRef，用于批量写入时判断是否需要刷新
 
@@ -194,6 +195,9 @@ export default function PDAScanScreen() {
   useEffect(() => () => {
     if (focusTimerRef.current) {
       clearTimeout(focusTimerRef.current);
+    }
+    if (autoSubmitTimerRef.current) {
+      clearTimeout(autoSubmitTimerRef.current);
     }
   }, []);
 
@@ -713,16 +717,12 @@ export default function PDAScanScreen() {
     } finally {
       // 给扫码枪留一个很短的输入窗口，避免上一条还在处理时下一条被吞掉。
       setTimeout(() => {
-        const pendingCode = pendingInputRef.current.trim();
-        pendingInputRef.current = '';
         processingRef.current = false;
 
-        if (pendingCode) {
-          setInputValue('');
-          if (ORDER_NO_REGEX.test(pendingCode) || isQRCode(pendingCode)) {
-            processScan(pendingCode);
-            return;
-          }
+        const nextPendingCode = pendingScanCodesRef.current.shift();
+        if (nextPendingCode) {
+          processScan(nextPendingCode);
+          return;
         }
 
         focusScannerInput(0);
@@ -854,28 +854,42 @@ export default function PDAScanScreen() {
     );
   }, [orderNo]);
 
-  // 处理扫描（入口函数，清理换行符后调用）
-  // 修复：防止 onChangeText 和 onSubmitEditing 重复触发
-  const handleScan = useCallback(async () => {
-    // 如果正在处理中，直接返回
-    if (processingRef.current) return;
-    
-    // PDA扫码可能带有多余的字符，需要全面清理
-    let code = inputValue.trim()
-      .replace(/[\r\n\t\s]+/g, '')  // 清理所有空白字符（换行、回车、制表符、空格）
-      .replace(/^[^A-Za-z0-9]+/, '')  // 清理开头非字母数字字符
-      .replace(/[^A-Za-z0-9]+$/, ''); // 清理结尾非字母数字字符
+  const normalizeScannerInput = useCallback((rawText: string): string => {
+    return rawText
+      .trim()
+      .replace(/[\r\n\t\s]+/g, '')
+      .replace(/^[^A-Za-z0-9]+/, '')
+      .replace(/[^A-Za-z0-9]+$/, '');
+  }, []);
 
-    // 如果没有有效内容，不处理
+  const flushScannerInput = useCallback((rawText?: string) => {
+    const sourceText = typeof rawText === 'string' ? rawText : liveInputValueRef.current;
+    const code = normalizeScannerInput(sourceText);
+
+    liveInputValueRef.current = '';
+    setInputValue('');
+
     if (!code) {
+      if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
+        focusScannerInput(0);
+      }
       return;
     }
 
-    
-    setInputValue(''); // 清空输入框
-    await processScan(code);
-    // 注意：processScan 的 finally 块会处理重新聚焦
-  }, [focusScannerInput, inputValue, processScan]);
+    if (!ORDER_NO_REGEX.test(code) && !isQRCode(code)) {
+      if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
+        focusScannerInput(0);
+      }
+      return;
+    }
+
+    if (processingRef.current) {
+      pendingScanCodesRef.current.push(code);
+      return;
+    }
+
+    processScan(code);
+  }, [focusScannerInput, normalizeScannerInput, processScan]);
 
   // 输入变化时自动检测并触发（扫码器逐字符输入，需要防抖检测完成）
   const handleInputChange = useCallback((text: string) => {
@@ -885,72 +899,28 @@ export default function PDAScanScreen() {
       autoSubmitTimerRef.current = null;
     }
 
-    // 如果正在处理中，忽略新的输入（避免并发问题）
-    if (processingRef.current) {
-      pendingInputRef.current = text;
-      setInputValue(text);
-      return;
-    }
+    liveInputValueRef.current = text;
+    setInputValue(text);
 
     // 如果当前有输入内容，启动定时器检测扫码完成
     if (text.length > 0) {
       autoSubmitTimerRef.current = setTimeout(() => {
-        const code = text.trim();
-        // 检测到输入完成（输入停止超过阈值，认为扫码完成）
-        if (code.length >= 1) {
-          // 订单号格式直接处理，跳过一维码过滤
-          if (ORDER_NO_REGEX.test(code)) {
-            setInputValue(''); // 清空输入框
-            processScan(code);
-            return;
-          }
-          // 一维码过滤：不含分隔符的扫码静默忽略
-          if (!isQRCode(code)) {
-            setInputValue(''); // 清空输入框
-            focusScannerInput(0);
-            return;
-          }
-          setInputValue(''); // 清空输入框
-          processScan(code);
-        }
+        autoSubmitTimerRef.current = null;
+        flushScannerInput(text);
       }, 150); // 150ms 防抖，等待扫码器输入完成
       return;
     }
-
-    // 输入框被清空时，更新状态
-    setInputValue(text);
-  }, [focusScannerInput, processScan]);
+  }, [flushScannerInput]);
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
-    if (processingRef.current) return;
-
-    let code = inputValue
-      .replace(/[\r\n\t]+$/, '')
-      .trim()
-      .replace(/[\r\n\t\s]+/g, '')
-      .replace(/^[^A-Za-z0-9]+/, '')
-      .replace(/[^A-Za-z0-9]+$/, '');
-
-    if (!code) return;
-
-    // 订单号格式直接处理，跳过一维码过滤
-    if (ORDER_NO_REGEX.test(code)) {
-      setInputValue('');
-      processScan(code);
-      return;
+    if (autoSubmitTimerRef.current) {
+      clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
     }
 
-    // 一维码过滤：不含分隔符的扫码静默忽略
-    if (!isQRCode(code)) {
-      setInputValue('');
-      focusScannerInput(0);
-      return;
-    }
-
-    setInputValue('');
-    processScan(code);
-  }, [inputValue, processScan]);
+    flushScannerInput();
+  }, [flushScannerInput]);
 
   // 选择仓库
   const selectWarehouse = async (wh: Warehouse) => {
