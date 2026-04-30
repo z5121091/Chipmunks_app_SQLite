@@ -963,27 +963,15 @@ const performDatabaseInitialization = async (): Promise<void> => {
       ['db_version']
     );
     const currentVersion = versionResult ? parseInt(versionResult.value, 10) : 0;
+    const targetDbVersion = currentVersion > DB_VERSION ? currentVersion : DB_VERSION;
 
     console.log('[DB Version] 当前数据库版本:', currentVersion, '期望版本:', DB_VERSION);
 
-    // 如果版本不匹配，删除所有表（让后续的CREATE语句重新创建）
-    if (currentVersion !== DB_VERSION && currentVersion > 0) {
-      console.log('[DB Version] 数据库版本不匹配，开始清理旧表...');
-
-      const dropOrder = ['print_history', 'unpack_records', 'materials', 'orders',
-                         'inventory_check_records', 'inbound_records', 'inventory_bindings',
-                         'qr_code_rules', 'custom_fields', 'warehouses'];
-
-      for (const tableName of dropOrder) {
-        try {
-          await db.execAsync(`DROP TABLE IF EXISTS ${tableName}`);
-          console.log(`[DB Version] 删除表: ${tableName}`);
-        } catch (error) {
-          console.warn(`[DB Version] 删除表失败: ${tableName}`, error);
-        }
-      }
-
-      console.log('[DB Version] 旧表清理完成，将创建新表...');
+    // 版本不一致时只做非破坏性迁移，绝不因版本号变化直接删库。
+    if (currentVersion > DB_VERSION) {
+      console.warn('[DB Version] 检测到更高版本数据库，保留现有数据并继续初始化');
+    } else if (currentVersion > 0 && currentVersion < DB_VERSION) {
+      console.log('[DB Version] 检测到旧版本数据库，将尝试执行非破坏性迁移...');
     }
 
     // 创建所有表
@@ -1274,9 +1262,9 @@ const performDatabaseInitialization = async (): Promise<void> => {
     // 设置数据库版本号
     await db.runAsync(
       'INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
-      ['db_version', DB_VERSION.toString()]
+      ['db_version', targetDbVersion.toString()]
     );
-    console.log('[initDatabase] 数据库版本已设置为:', DB_VERSION);
+    console.log('[initDatabase] 数据库版本已设置为:', targetDbVersion);
 
     console.log('[initDatabase] SQLite 数据库初始化成功');
 };
@@ -3873,7 +3861,7 @@ export const updateCustomField = async (id: string, updates: Partial<CustomField
   try {
     const database = getDb();
     const updateFields: string[] = [];
-    const values: any[] = [getISODateTime()]; // updated_at
+    const values: any[] = [];
     
     Object.entries(updates).forEach(([key, value]) => {
       if (key === 'required' && value !== undefined) {
@@ -3898,6 +3886,7 @@ export const updateCustomField = async (id: string, updates: Partial<CustomField
     
     if (updateFields.length > 0) {
       updateFields.push('updated_at = ?');
+      values.push(getISODateTime());
       values.push(id);
       await database.runAsync(
         `UPDATE custom_fields SET ${updateFields.join(', ')} WHERE id = ?`,
@@ -4262,103 +4251,135 @@ export const importBackupData = async (backup: BackupData): Promise<{
   };
 }> => {
   try {
+    const database = getDb();
+
     // 1. 检查程序中是否有配置数据
     const currentStats = await getConfigStats();
     const hasConfigData =
-      currentStats.warehouses > 0 ||
+      (currentStats.warehouses ?? 0) > 0 ||
       currentStats.rules > 0 ||
       currentStats.customFields > 0 ||
-      currentStats.inventoryBindings > 0;
+      (currentStats.inventoryBindings ?? 0) > 0;
 
-    // 2. 如果有配置数据，先清空所有配置数据（不影响业务数据）
+    // 2. 统一在事务里替换配置，避免删旧后导入失败留下半套配置
     if (hasConfigData) {
-      console.log('程序中已有配置数据，先清空配置数据');
-      await clearAllConfigData();
+      console.log('程序中已有配置数据，将在事务中替换配置');
     } else {
       console.log('程序为空，直接导入配置');
     }
 
-    // 3. 导入仓库（因为物料绑定依赖仓库）
-    if (backup.warehouses && backup.warehouses.length > 0) {
-      for (const warehouse of backup.warehouses) {
-        try {
-          await addWarehouse(warehouse);
-        } catch (e) {
-          console.error('导入仓库失败:', warehouse, e);
-          throw new Error(`导入仓库失败: ${warehouse.name} - ${e}`);
-        }
-      }
-    }
+    await database.execAsync('BEGIN IMMEDIATE TRANSACTION');
 
-    // 4. 导入解析规则
-    if (backup.rules && backup.rules.length > 0) {
-      const database = getDb();
-      for (const rule of backup.rules) {
-        try {
-          await database.runAsync(
-            `INSERT OR REPLACE INTO qr_code_rules (
-              id, name, description, separator, field_order, custom_field_ids,
-              is_active, supplier_name, match_conditions, field_prefixes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              rule.id,
-              rule.name,
-              rule.description || '',
-              rule.separator || '',
-              JSON.stringify(rule.fieldOrder || []),
-              JSON.stringify(rule.customFieldIds || []),
-              rule.isActive ? 1 : 0,
-              rule.supplierName || '',
-              JSON.stringify(rule.matchConditions || []),
-              JSON.stringify(rule.fieldPrefixes || {}),
-              rule.created_at || getISODateTime(),
-              rule.updated_at || getISODateTime(),
-            ]
-          );
-        } catch (e) {
-          console.error('导入解析规则失败:', rule, e);
-          throw new Error(`导入解析规则失败: ${rule.name} - ${e}`);
-        }
-      }
-    }
+    try {
+      await database.runAsync('DELETE FROM inventory_bindings');
+      await database.runAsync('DELETE FROM qr_code_rules');
+      await database.runAsync('DELETE FROM custom_fields');
+      await database.runAsync('DELETE FROM warehouses');
 
-    // 5. 导入自定义字段
-    if (backup.customFields && backup.customFields.length > 0) {
-      const database = getDb();
-      for (const field of backup.customFields) {
-        try {
-          await database.runAsync(
-            `INSERT OR REPLACE INTO custom_fields (
-              id, name, type, required, options, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              field.id,
-              field.name,
-              field.type,
-              field.required ? 1 : 0,
-              JSON.stringify(field.options || []),
-              field.sortOrder || 0,
-              field.created_at || getISODateTime(),
-              field.updated_at || getISODateTime(),
-            ]
-          );
-        } catch (e) {
-          console.error('导入自定义字段失败:', field, e);
-          throw new Error(`导入自定义字段失败: ${field.name} - ${e}`);
+      // 3. 导入仓库（因为物料绑定依赖仓库）
+      if (backup.warehouses && backup.warehouses.length > 0) {
+        for (const warehouse of backup.warehouses) {
+          try {
+            await database.runAsync(
+              'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
+              [
+                warehouse.id,
+                warehouse.name,
+                warehouse.description || null,
+                warehouse.is_default ? 1 : 0,
+                warehouse.created_at || getISODateTime(),
+              ]
+            );
+          } catch (e) {
+            console.error('导入仓库失败:', warehouse, e);
+            throw new Error(`导入仓库失败: ${warehouse.name} - ${e}`);
+          }
         }
       }
-    }
 
-    // 6. 导入物料绑定
-    if (backup.inventoryBindings && backup.inventoryBindings.length > 0) {
-      for (const binding of backup.inventoryBindings) {
-        try {
-          await addInventoryBinding(binding);
-        } catch (e) {
-          console.error('导入物料绑定失败:', binding, e);
-          throw new Error(`导入物料绑定失败: ${binding.model} - ${e}`);
+      // 4. 导入解析规则
+      if (backup.rules && backup.rules.length > 0) {
+        for (const rule of backup.rules) {
+          try {
+            await database.runAsync(
+              `INSERT INTO qr_code_rules (
+                id, name, description, separator, field_order, custom_field_ids,
+                is_active, supplier_name, match_conditions, field_prefixes, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                rule.id,
+                rule.name,
+                rule.description || '',
+                rule.separator || '',
+                JSON.stringify(rule.fieldOrder || []),
+                JSON.stringify(rule.customFieldIds || []),
+                rule.isActive ? 1 : 0,
+                rule.supplierName || '',
+                JSON.stringify(rule.matchConditions || []),
+                JSON.stringify(rule.fieldPrefixes || {}),
+                rule.created_at || getISODateTime(),
+                rule.updated_at || getISODateTime(),
+              ]
+            );
+          } catch (e) {
+            console.error('导入解析规则失败:', rule, e);
+            throw new Error(`导入解析规则失败: ${rule.name} - ${e}`);
+          }
         }
       }
+
+      // 5. 导入自定义字段
+      if (backup.customFields && backup.customFields.length > 0) {
+        for (const field of backup.customFields) {
+          try {
+            await database.runAsync(
+              `INSERT INTO custom_fields (
+                id, name, type, required, options, sort_order, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                field.id,
+                field.name,
+                field.type,
+                field.required ? 1 : 0,
+                JSON.stringify(field.options || []),
+                field.sortOrder || 0,
+                field.created_at || getISODateTime(),
+                field.updated_at || getISODateTime(),
+              ]
+            );
+          } catch (e) {
+            console.error('导入自定义字段失败:', field, e);
+            throw new Error(`导入自定义字段失败: ${field.name} - ${e}`);
+          }
+        }
+      }
+
+      // 6. 导入物料绑定
+      if (backup.inventoryBindings && backup.inventoryBindings.length > 0) {
+        for (const binding of backup.inventoryBindings) {
+          try {
+            await database.runAsync(
+              'INSERT INTO inventory_bindings (id, scan_model, inventory_code, supplier, description, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+              [
+                binding.id,
+                binding.scan_model,
+                binding.inventory_code,
+                binding.supplier || null,
+                binding.description || null,
+                binding.created_at || getISODateTime(),
+              ]
+            );
+          } catch (e) {
+            console.error('导入物料绑定失败:', binding, e);
+            throw new Error(`导入物料绑定失败: ${binding.scan_model} - ${e}`);
+          }
+        }
+      }
+
+      await database.execAsync('COMMIT');
+    } catch (error) {
+      await database.execAsync('ROLLBACK');
+      throw error;
     }
 
     // 7. 导入同步服务器配置
@@ -4368,6 +4389,12 @@ export const importBackupData = async (backup: BackupData): Promise<{
       } catch (e) {
         console.error('导入同步配置失败:', e);
         // 同步配置导入失败不影响整体，跳过
+      }
+    } else {
+      try {
+        await AsyncStorage.removeItem(STORAGE_KEYS.SYNC_CONFIG);
+      } catch (e) {
+        console.error('清理旧同步配置失败:', e);
       }
     }
 

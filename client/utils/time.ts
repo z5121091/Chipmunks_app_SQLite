@@ -8,11 +8,11 @@
 // ============================================
 
 /**
- * 获取当前时间（用于存储/导出/备份）
+ * 获取指定时间或当前时间（用于存储/导出/备份）
  * 格式：YYYY/M/D HH:mm (不补零，更紧凑)
  */
-export const getISODateTime = (): string => {
-  const now = new Date();
+export const getISODateTime = (date: Date = new Date()): string => {
+  const now = date;
   const year = now.getFullYear();
   const month = now.getMonth() + 1;  // 不补零
   const day = now.getDate();  // 不补零

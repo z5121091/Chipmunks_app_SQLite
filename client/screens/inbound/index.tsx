@@ -445,21 +445,20 @@ export default function InboundScreen() {
     }
 
     processingRef.current = true;
+    let parsed: {
+      model: string;
+      batch: string;
+      quantity: string;
+      package?: string;
+      version?: string;
+      productionDate?: string;
+      traceNo?: string;
+      sourceNo?: string;
+      customFields?: Record<string, string>;
+    } | null = null;
 
     try {
       // 解析二维码
-      let parsed: {
-        model: string;
-        batch: string;
-        quantity: string;
-        package?: string;
-        version?: string;
-        productionDate?: string;
-        traceNo?: string;
-        sourceNo?: string;
-        customFields?: Record<string, string>;
-      } | null = null;
-
       try {
         const rule = await detectRule(code);
         console.log('[扫码入库] 检测到规则:', { ruleName: rule?.name, ruleSeparator: rule?.separator, codeLength: code.length });
@@ -492,14 +491,15 @@ export default function InboundScreen() {
         return;
       }
 
-      const quantity = parseInt(parsed.quantity || '1', 10);
+      const parsedRecord = parsed;
+      const quantity = parseInt(parsedRecord.quantity || '1', 10);
 
       // 查找存货编码和供应商
-      const inventoryCode = await getInventoryCodeByModel(parsed.model);
-      const supplier = await getSupplierByModel(parsed.model);
+      const inventoryCode = await getInventoryCodeByModel(parsedRecord.model);
+      const supplier = await getSupplierByModel(parsedRecord.model);
 
       console.log('[扫码入库] 查询结果:', {
-        model: parsed.model,
+        model: parsedRecord.model,
         inventoryCode,
         supplier,
         currentSupplier,
@@ -510,7 +510,7 @@ export default function InboundScreen() {
         console.warn('[扫码入库] 供应商不一致:', {
           currentSupplier,
           newSupplier: supplier,
-          model: parsed.model,
+          model: parsedRecord.model,
         });
         // 改为警告提示，不阻止入库
         showToast(`⚠️ 供应商不同\n当前: ${currentSupplier}\n此物料: ${supplier}`, 'warning');
@@ -526,8 +526,8 @@ export default function InboundScreen() {
       let isDuplicate = false;
 
       // 根据追溯码判断（已保存的记录）
-      if (parsed.traceNo) {
-        const existing = scanRecords.find(r => r.traceNo === parsed.traceNo);
+      if (parsedRecord.traceNo) {
+        const existing = scanRecords.find(r => r.traceNo === parsedRecord.traceNo);
         if (existing) {
           isDuplicate = true;
         }
@@ -542,26 +542,26 @@ export default function InboundScreen() {
       // 新增记录（保存原始记录，不合并数量）
       const newRecord: ScanRecord = {
         id: Date.now().toString(),
-        model: parsed.model,
-        batch: parsed.batch,
+        model: parsedRecord.model,
+        batch: parsedRecord.batch,
         quantity,
         scanTime: formatDateTime(new Date().toISOString()),
         rawContent: code,
         inventoryCode: inventoryCode || undefined,
         supplier: supplier || undefined,
         // 扩展字段
-        package: parsed.package || undefined,
-        version: parsed.version || undefined,
-        productionDate: parsed.productionDate || undefined,
-        traceNo: parsed.traceNo || undefined,
-        sourceNo: parsed.sourceNo || undefined,
+        package: parsedRecord.package || undefined,
+        version: parsedRecord.version || undefined,
+        productionDate: parsedRecord.productionDate || undefined,
+        traceNo: parsedRecord.traceNo || undefined,
+        sourceNo: parsedRecord.sourceNo || undefined,
         // 自定义字段
-        customFields: parsed.customFields,
+        customFields: parsedRecord.customFields,
       };
       const newRecords = [newRecord, ...scanRecords];
       setScanRecords(newRecords);
       saveScanRecords(newRecords);
-      showToast(`${parsed.model}`, 'success');
+      showToast(`${parsedRecord.model}`, 'success');
       feedbackSuccess();
     } catch (e) {
       console.error('[扫码入库] 处理失败:', e);
