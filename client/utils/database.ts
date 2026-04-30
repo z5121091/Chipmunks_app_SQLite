@@ -325,6 +325,73 @@ const stringToJson = <T>(str: string | null): T | null => {
   }
 };
 
+const parseStoredDateTimeToMillis = (value?: string | null): number => {
+  if (!value) return 0;
+
+  const localMatch = value.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/);
+  if (localMatch) {
+    const [, year, month, day, hours = '0', minutes = '0'] = localMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes)
+    ).getTime();
+  }
+
+  const fallback = new Date(value).getTime();
+  return Number.isNaN(fallback) ? 0 : fallback;
+};
+
+const normalizeRuleRecord = (record: any): QRCodeRule => {
+  const fieldOrder = stringToJson<string[]>(record.field_order) || [];
+  const customFieldIds = stringToJson<string[]>(record.custom_field_ids) || [];
+  const rawFieldPrefixes = stringToJson<FieldPrefixes>(record.field_prefixes) || {};
+  const fieldPrefixes = fieldOrder.reduce<FieldPrefixes>((acc, fieldName) => {
+    const prefix = rawFieldPrefixes[fieldName];
+    if (typeof prefix === 'string') {
+      acc[fieldName] = prefix;
+    }
+    return acc;
+  }, {});
+  const rawMatchConditions = stringToJson<MatchCondition[]>(record.match_conditions) || [];
+  const matchConditions = rawMatchConditions
+    .filter(condition =>
+      condition &&
+      Number.isInteger(condition.fieldIndex) &&
+      typeof condition.keyword === 'string' &&
+      condition.keyword.trim().length > 0
+    )
+    .map(condition => ({
+      fieldIndex: condition.fieldIndex,
+      keyword: condition.keyword.trim(),
+    }));
+
+  return {
+    ...record,
+    description: record.description || '',
+    fieldOrder,
+    customFieldIds,
+    fieldPrefixes,
+    isActive: record.is_active === 1,
+    supplierName: record.supplier_name || undefined,
+    matchConditions,
+  } as QRCodeRule;
+};
+
+const sortRulesByPriority = (rules: QRCodeRule[]): QRCodeRule[] => {
+  return rules.slice().sort((a, b) => {
+    const updatedDiff = parseStoredDateTimeToMillis(b.updated_at) - parseStoredDateTimeToMillis(a.updated_at);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff = parseStoredDateTimeToMillis(b.created_at) - parseStoredDateTimeToMillis(a.created_at);
+    if (createdDiff !== 0) return createdDiff;
+
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+};
+
 // 获取数据库实例
 const getDb = (): SQLite.SQLiteDatabase => {
   if (isWebPlatform) {
@@ -3622,20 +3689,9 @@ export const clearAllInventoryCheckRecords = async (): Promise<void> => {
 export const getAllRules = async (): Promise<QRCodeRule[]> => {
   try {
     const database = getDb();
-    const results = await database.getAllAsync<any>(
-      'SELECT * FROM qr_code_rules ORDER BY created_at DESC'
-    );
-    
-    return results.map(r => ({
-      ...r,
-      description: r.description || '',
-      fieldOrder: stringToJson<string[]>(r.field_order) || [],
-      customFieldIds: stringToJson<string[]>(r.custom_field_ids) || [],
-      fieldPrefixes: stringToJson<FieldPrefixes>(r.field_prefixes) || {},
-      isActive: r.is_active === 1,
-      supplierName: r.supplier_name || undefined,
-      matchConditions: stringToJson<MatchCondition[]>(r.match_conditions),
-    })) as QRCodeRule[];
+    const results = await database.getAllAsync<any>('SELECT * FROM qr_code_rules');
+
+    return sortRulesByPriority(results.map(normalizeRuleRecord));
   } catch (error) {
     console.error('获取规则列表失败:', error);
     return [];
@@ -3780,16 +3836,7 @@ export const getRuleById = async (id: string): Promise<QRCodeRule | null> => {
 
     if (!result) return null;
 
-    return {
-      ...result,
-      description: result.description || '',
-      fieldOrder: stringToJson<string[]>(result.field_order) || [],
-      customFieldIds: stringToJson<string[]>(result.custom_field_ids) || [],
-      fieldPrefixes: stringToJson<FieldPrefixes>(result.field_prefixes) || {},
-      isActive: result.is_active === 1,
-      supplierName: result.supplier_name || undefined,
-      matchConditions: stringToJson<MatchCondition[]>(result.match_conditions),
-    } as QRCodeRule;
+    return normalizeRuleRecord(result);
   } catch (error) {
     console.error('获取规则失败:', error);
     return null;
@@ -3960,7 +4007,97 @@ const splitByBracket = (str: string, leftBracket: string): string[] => {
   let s = str.trim();
   if (s.startsWith(leftBracket)) s = s.slice(1);
   if (s.endsWith(rightBracket)) s = s.slice(0, -1);
-  return s.split(rightBracket + leftBracket).map(p => p.trim()).filter(p => p.length > 0);
+  return s.split(rightBracket + leftBracket).map(p => p.trim());
+};
+
+const splitBySeparator = (content: string, separator: string): string[] => {
+  return content.split(separator).map(part => part.trim());
+};
+
+const normalizeMatchText = (value: string): string => value.trim().toLowerCase();
+
+const getConfiguredFieldPrefixMatchLength = (value: string, prefix?: string): number | null => {
+  const normalizedPrefix = prefix?.replace(/\s+/g, '').toLowerCase();
+  if (!normalizedPrefix) {
+    return null;
+  }
+
+  let consumedLength = 0;
+  let normalizedHead = '';
+
+  while (consumedLength < value.length && normalizedHead.length < normalizedPrefix.length) {
+    const char = value[consumedLength];
+    consumedLength += 1;
+
+    if (!/\s/.test(char)) {
+      normalizedHead += char.toLowerCase();
+    }
+  }
+
+  return normalizedHead === normalizedPrefix ? consumedLength : null;
+};
+
+const doesConfiguredFieldPrefixMatch = (value: string, prefix?: string): boolean => {
+  return getConfiguredFieldPrefixMatchLength(value, prefix) !== null;
+};
+
+const getRulePrefixStats = (rule: QRCodeRule, parts: string[]) => {
+  let configuredCount = 0;
+  let matchedCount = 0;
+
+  (rule.fieldOrder || []).forEach((fieldName, index) => {
+    const prefix = rule.fieldPrefixes?.[fieldName];
+    if (!prefix?.trim()) {
+      return;
+    }
+
+    configuredCount += 1;
+
+    if (index < parts.length && doesConfiguredFieldPrefixMatch(parts[index], prefix)) {
+      matchedCount += 1;
+    }
+  });
+
+  return { configuredCount, matchedCount };
+};
+
+type RuleDetectionCandidate = {
+  rule: QRCodeRule;
+  parts: string[];
+  fieldCount: number;
+  configuredPrefixCount: number;
+  matchedPrefixCount: number;
+};
+
+const compareRuleDetectionCandidates = (a: RuleDetectionCandidate, b: RuleDetectionCandidate): number => {
+  if (a.matchedPrefixCount !== b.matchedPrefixCount) {
+    return b.matchedPrefixCount - a.matchedPrefixCount;
+  }
+
+  if (a.matchedPrefixCount === 0 && a.configuredPrefixCount !== b.configuredPrefixCount) {
+    if (a.configuredPrefixCount === 0) return -1;
+    if (b.configuredPrefixCount === 0) return 1;
+  }
+
+  if (a.matchedPrefixCount > 0 && a.configuredPrefixCount !== b.configuredPrefixCount) {
+    return b.configuredPrefixCount - a.configuredPrefixCount;
+  }
+
+  if (a.fieldCount !== b.fieldCount) {
+    return b.fieldCount - a.fieldCount;
+  }
+
+  const updatedDiff = parseStoredDateTimeToMillis(b.rule.updated_at) - parseStoredDateTimeToMillis(a.rule.updated_at);
+  if (updatedDiff !== 0) {
+    return updatedDiff;
+  }
+
+  const createdDiff = parseStoredDateTimeToMillis(b.rule.created_at) - parseStoredDateTimeToMillis(a.rule.created_at);
+  if (createdDiff !== 0) {
+    return createdDiff;
+  }
+
+  return a.rule.name.localeCompare(b.rule.name, 'zh-CN');
 };
 
 // 根据二维码内容自动识别规则
@@ -3983,7 +4120,7 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
              lower.startsWith('sftp://');
     };
     
-    // 计算每种分隔符能拆分出多少字段
+    // 计算每种分隔符能拆分出多少字段（保留空字段，避免字段位置错位）
     const separatorPartsCount: { separator: string; count: number; parts: string[] }[] = [];
     
     // 优先检测预设括号格式
@@ -4002,64 +4139,98 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
     // 检测其他分隔符
     for (const sep of uniqueSeparators) {
       if ((sep === '/' || sep === '//') && isURL(content)) continue;
-      
-      const parts = content.split(sep).map(s => s.trim()).filter(s => s.length > 0);
+
+      const parts = splitBySeparator(content, sep);
       if (parts.length >= 2) {
         separatorPartsCount.push({ separator: sep, count: parts.length, parts });
       }
     }
-    
-    // 按字段数量降序排列
-    separatorPartsCount.sort((a, b) => b.count - a.count);
-    
-    // 优先匹配有识别条件的规则
+
+    const buildCandidate = (rule: QRCodeRule, parts: string[]): RuleDetectionCandidate => {
+      const fieldCount = rule.fieldOrder?.length || 0;
+      const prefixStats = getRulePrefixStats(rule, parts);
+      return {
+        rule,
+        parts,
+        fieldCount,
+        configuredPrefixCount: prefixStats.configuredCount,
+        matchedPrefixCount: prefixStats.matchedCount,
+      };
+    };
+
+    const selectBestCandidate = (candidates: RuleDetectionCandidate[]): QRCodeRule | null => {
+      if (candidates.length === 0) {
+        return null;
+      }
+
+      return candidates.slice().sort(compareRuleDetectionCandidates)[0].rule;
+    };
+
+    const conditionedCandidates: RuleDetectionCandidate[] = [];
+    const exactCandidates: RuleDetectionCandidate[] = [];
+    const closestCandidates: RuleDetectionCandidate[] = [];
+
     for (const { separator, count, parts } of separatorPartsCount) {
-      const rulesWithConditions = rules.filter(r =>
-        r.separator === separator &&
-        r.matchConditions &&
-        r.matchConditions.length > 0
-      );
-      
-      for (const rule of rulesWithConditions) {
-        let ruleFieldCount = rule.fieldOrder?.length || 0;
-        if (ruleFieldCount !== count) continue;
-        
-        const allMatch = rule.matchConditions!.every(condition => {
-          if (condition.fieldIndex < 0 || condition.fieldIndex >= parts.length) return false;
-          return parts[condition.fieldIndex].includes(condition.keyword);
+      const matchingRules = rules.filter(rule => rule.separator === separator);
+      if (matchingRules.length === 0) {
+        continue;
+      }
+
+      matchingRules
+        .filter(rule => (rule.matchConditions?.length || 0) > 0)
+        .forEach(rule => {
+          const ruleFieldCount = rule.fieldOrder?.length || 0;
+          if (ruleFieldCount !== count) {
+            return;
+          }
+
+          const allMatch = (rule.matchConditions || []).every(condition => {
+            if (condition.fieldIndex < 0 || condition.fieldIndex >= parts.length) return false;
+            return normalizeMatchText(parts[condition.fieldIndex]).includes(normalizeMatchText(condition.keyword));
+          });
+
+          if (allMatch) {
+            conditionedCandidates.push(buildCandidate(rule, parts));
+          }
         });
-        
-        if (allMatch) {
-          return rule;
-        }
+
+      matchingRules
+        .filter(rule => (rule.fieldOrder?.length || 0) === count)
+        .forEach(rule => {
+          exactCandidates.push(buildCandidate(rule, parts));
+        });
+
+      const closestRules = matchingRules.filter(rule => (rule.fieldOrder?.length || 0) <= count);
+      if (closestRules.length > 0) {
+        const maxFieldCount = Math.max(...closestRules.map(rule => rule.fieldOrder?.length || 0));
+        closestRules
+          .filter(rule => (rule.fieldOrder?.length || 0) === maxFieldCount)
+          .forEach(rule => {
+            closestCandidates.push(buildCandidate(rule, parts));
+          });
       }
     }
-    
-    // 走原有逻辑（兼容没有识别条件的规则）
-    for (const { separator, count } of separatorPartsCount) {
-      const matchingRules = rules.filter(r => r.separator === separator);
-      if (matchingRules.length === 0) continue;
-      
-      const exactMatch = matchingRules.find(r =>
-        (r.fieldOrder?.length || 0) === count
-      );
-      
-      if (exactMatch) {
-        return exactMatch;
-      }
-      
-      const closestRules = matchingRules
-        .filter(r => (r.fieldOrder?.length || 0) <= count)
-        .sort((a, b) => (b.fieldOrder?.length || 0) - (a.fieldOrder?.length || 0));
-      
-      if (closestRules.length > 0) {
-        return closestRules[0];
-      }
+
+    const conditionedMatch = selectBestCandidate(conditionedCandidates);
+    if (conditionedMatch) {
+      return conditionedMatch;
+    }
+
+    const exactMatch = selectBestCandidate(exactCandidates);
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const closestMatch = selectBestCandidate(closestCandidates);
+    if (closestMatch) {
+      return closestMatch;
     }
     
     // 没有匹配的规则，尝试自动识别
     if (separatorPartsCount.length > 0) {
-      const best = separatorPartsCount[0];
+      const best = separatorPartsCount
+        .slice()
+        .sort((a, b) => b.count - a.count || b.separator.length - a.separator.length)[0];
       return {
         id: 'auto_detect',
         name: '自动识别',
@@ -4080,28 +4251,12 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
 };
 
 const stripConfiguredFieldPrefix = (value: string, prefix?: string): string => {
-  const normalizedPrefix = prefix?.replace(/\s+/g, '').toLowerCase();
-  if (!normalizedPrefix) {
+  const consumedLength = getConfiguredFieldPrefixMatchLength(value, prefix);
+  if (consumedLength === null) {
     return value;
   }
 
-  let consumedLength = 0;
-  let normalizedHead = '';
-
-  while (consumedLength < value.length && normalizedHead.length < normalizedPrefix.length) {
-    const char = value[consumedLength];
-    consumedLength += 1;
-
-    if (!/\s/.test(char)) {
-      normalizedHead += char.toLowerCase();
-    }
-  }
-
-  if (normalizedHead === normalizedPrefix) {
-    return value.slice(consumedLength).trim();
-  }
-
-  return value;
+  return value.slice(consumedLength).trim();
 };
 
 // 使用规则解析二维码内容
@@ -4119,7 +4274,7 @@ export const parseWithRule = (
   if (bracketLeft) {
     parts = splitByBracket(content, bracketLeft);
   } else {
-    parts = content.split(rule.separator).map(s => s.trim()).filter(s => s.length > 0);
+    parts = splitBySeparator(content, rule.separator);
   }
   
   // 提取标准字段和自定义字段
