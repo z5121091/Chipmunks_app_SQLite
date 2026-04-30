@@ -4,6 +4,7 @@
  * 封装 Excel 生成和同步到电脑的功能
  */
 import * as XLSX from 'xlsx';
+import { Base64 } from 'js-base64';
 import { EXPORT_CONFIG, SyncConfig } from '@/constants/config';
 
 /** Excel Sheet 配置 */
@@ -51,6 +52,32 @@ export const generateExcelBase64 = (sheets: ExcelSheet[]): string => {
   return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 };
 
+export const decodeBase64ToBytes = (base64String: string): Uint8Array => {
+  return Base64.toUint8Array(base64String);
+};
+
+export const toBinaryBody = (bytes: Uint8Array): ArrayBuffer => {
+  return Uint8Array.from(bytes).buffer as ArrayBuffer;
+};
+
+export const parseJsonResponse = async <T>(
+  response: Response,
+  invalidJsonMessage = '服务器返回格式错误'
+): Promise<T> => {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    throw new Error(invalidJsonMessage);
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch (error) {
+    console.error('[parseJsonResponse] JSON解析失败，响应内容:', responseText.substring(0, 200), error);
+    throw new Error(invalidJsonMessage);
+  }
+};
+
 /**
  * 同步 Excel 到电脑（支持多 Sheet）
  */
@@ -73,11 +100,8 @@ export const syncExcelToComputer = async (
   
   try {
     const base64String = generateExcelBase64(sheets);
-    const binaryString = atob(base64String);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+    const bytes = decodeBase64ToBytes(base64String);
+    const body = toBinaryBody(bytes);
     
     const baseUrl = `http://${syncConfig.ip}:${syncConfig.port || '8080'}${endpoint}`;
     const url = nameSuffix ? `${baseUrl}?name_suffix=${encodeURIComponent(nameSuffix)}` : baseUrl;
@@ -90,12 +114,15 @@ export const syncExcelToComputer = async (
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
-      body: bytes,
+      body,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
     
-    const result = await response.json();
+    const result = await parseJsonResponse<{ success?: boolean; message?: string; path?: string }>(
+      response,
+      '服务器返回格式错误，请检查同步服务是否正常运行'
+    );
     
     if (result.success) {
       onSuccess?.(result.path || '');

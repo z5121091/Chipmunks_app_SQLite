@@ -235,12 +235,12 @@ export const parseQRCodeSync = (
     let str = trimmedContent;
     if (str.startsWith(bracketLeft)) str = str.slice(1);
     if (str.endsWith(rightBracket)) str = str.slice(0, -1);
-    fields = str.split(rightBracket + bracketLeft).map(s => s.trim()).filter(s => s.length > 0);
+    fields = str.split(rightBracket + bracketLeft).map(s => s.trim());
   } else {
     // 2. 尝试通用分隔符
     for (const sep of COMMON_SEPARATORS) {
       if (sep === '//' && isURL(trimmedContent)) continue;
-      const parts = trimmedContent.split(sep).map(s => s.trim()).filter(s => s.length > 0);
+      const parts = trimmedContent.split(sep).map(s => s.trim());
       if (parts.length >= 2) {
         separator = sep;
         fields = parts;
@@ -253,7 +253,7 @@ export const parseQRCodeSync = (
       const customSep = detectCustomSeparator(trimmedContent);
       if (customSep) {
         separator = customSep;
-        fields = trimmedContent.split(customSep).map(s => s.trim()).filter(s => s.length > 0);
+        fields = trimmedContent.split(customSep).map(s => s.trim());
       }
     }
   }

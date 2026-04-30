@@ -30,6 +30,8 @@ import {
   getAllWarehouses,
   getDefaultWarehouse,
 } from '@/utils/database';
+import { decodeBase64ToBytes, parseJsonResponse, toBinaryBody } from '@/utils/excel';
+import { safeJsonParseNullable } from '@/utils/json';
 import { STORAGE_KEYS, SyncConfig } from '@/constants/config';
 import { formatDate, formatDateTime, formatTime } from '@/utils/time';
 import { useSafeRouter, useSafeSearchParams } from '@/hooks/useSafeRouter';
@@ -205,7 +207,10 @@ export default function OrdersScreen() {
   const loadSyncConfig = useCallback(async () => {
     const savedSyncConfig = await AsyncStorage.getItem(STORAGE_KEYS.SYNC_CONFIG);
     if (savedSyncConfig) {
-      setSyncConfig(JSON.parse(savedSyncConfig));
+      const parsedConfig = safeJsonParseNullable<SyncConfig>(savedSyncConfig, 'orders.syncConfig');
+      if (parsedConfig) {
+        setSyncConfig(parsedConfig);
+      }
     }
   }, []);
   
@@ -337,9 +342,9 @@ export default function OrdersScreen() {
     // 尝试从订单管理独立的 Storage Key 加载仓库（不与扫码出库共享）
     const savedWarehouse = await AsyncStorage.getItem(STORAGE_KEYS.GLOBAL_WAREHOUSE);
     if (savedWarehouse) {
-      const warehouse = JSON.parse(savedWarehouse) as Warehouse;
+      const warehouse = safeJsonParseNullable<Warehouse>(savedWarehouse, 'orders.globalWarehouse');
       // 确保仓库仍然存在
-      if (list.find(w => w.id === warehouse.id)) {
+      if (warehouse && list.find(w => w.id === warehouse.id)) {
         setCurrentWarehouse(warehouse);
         return;
       }
@@ -825,13 +830,8 @@ export default function OrdersScreen() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '标签数据');
       const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      
-      // 转换为二进制
-      const binaryString = atob(wbout);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      const bytes = decodeBase64ToBytes(wbout);
+      const body = toBinaryBody(bytes);
       
       // 发送到电脑（添加订单号作为name_suffix，与设置页同步格式保持一致）
       const baseUrl = `http://${syncConfig.ip}:${syncConfig.port || '8080'}/labels`;
@@ -846,7 +846,7 @@ export default function OrdersScreen() {
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
-        body: bytes,
+        body,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -859,14 +859,10 @@ export default function OrdersScreen() {
       }
       
       // 尝试解析JSON响应
-      let result;
-      try {
-        result = await response.json();
-      } catch (parseError) {
-        const responseText = await response.text();
-        console.error('JSON解析失败，响应内容:', responseText.substring(0, 200));
-        throw new Error('服务器返回格式错误，请检查同步服务是否正常运行');
-      }
+      const result = await parseJsonResponse<{ success?: boolean; message?: string; path?: string }>(
+        response,
+        '服务器返回格式错误，请检查同步服务是否正常运行'
+      );
       
       if (result.success) {
         showCustomAlert('同步成功', `已同步 2 条标签到电脑\n${result.path || ''}`, [{ text: '确定' }], 'success');

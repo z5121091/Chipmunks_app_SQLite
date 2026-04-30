@@ -40,6 +40,7 @@ import { Spacing } from '@/constants/theme';
 import { feedbackSuccess, feedbackError, feedbackWarning, feedbackDuplicate, feedbackConfirm, useFeedbackCleanup } from '@/utils/feedback';
 import { useToast } from '@/utils/toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeJsonParseNullable } from '@/utils/json';
 import { formatDateTime, formatDate } from '@/utils/time';
 import { STORAGE_KEYS } from '@/constants/config';
 import { getErrorDetail } from '@/utils/errorTypes';
@@ -203,7 +204,10 @@ export default function InventoryScreen() {
     try {
       const savedRecords = await AsyncStorage.getItem(INVENTORY_CHECK_RECORDS_KEY);
       if (savedRecords) {
-        const records = JSON.parse(savedRecords) as ScanRecord[];
+        const records = safeJsonParseNullable<ScanRecord[]>(savedRecords, 'inventory.scanRecords');
+        if (!records) {
+          return;
+        }
 
         // 恢复盘点类型和仓库，同时验证仓库是否匹配
         const savedType = await AsyncStorage.getItem(INVENTORY_CHECK_TYPE_KEY);
@@ -213,7 +217,13 @@ export default function InventoryScreen() {
 
         const savedWarehouse = await AsyncStorage.getItem(INVENTORY_PENDING_WAREHOUSE_KEY);
         if (savedWarehouse) {
-          const savedWarehouseInfo = JSON.parse(savedWarehouse);
+          const savedWarehouseInfo = safeJsonParseNullable<{ id?: string }>(
+            savedWarehouse,
+            'inventory.pendingWarehouse'
+          );
+          if (!savedWarehouseInfo) {
+            return;
+          }
 
           // 验证保存时的仓库是否与当前仓库匹配
           if (warehouse) {
@@ -404,9 +414,9 @@ export default function InventoryScreen() {
         let warehouse: Warehouse | null = null;
         const savedWarehouse = await AsyncStorage.getItem(GLOBAL_WAREHOUSE_KEY);
         if (savedWarehouse) {
-          const saved = JSON.parse(savedWarehouse) as Warehouse;
+          const saved = safeJsonParseNullable<Warehouse>(savedWarehouse, 'inventory.globalWarehouse');
           // 确保仓库仍然存在
-          if (list.find(w => w.id === saved.id)) {
+          if (saved && list.find(w => w.id === saved.id)) {
             warehouse = saved;
           }
         }

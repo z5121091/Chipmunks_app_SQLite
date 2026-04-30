@@ -329,7 +329,8 @@ const stringToJson = <T>(str: string | null): T | null => {
 const parseStoredDateTimeToMillis = (value?: string | null): number => {
   if (!value) return 0;
 
-  const localMatch = value.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/);
+  const normalizedValue = normalizeStoredDateTimeString(value) || value;
+  const localMatch = normalizedValue.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/);
   if (localMatch) {
     const [, year, month, day, hours = '0', minutes = '0'] = localMatch;
     return new Date(
@@ -341,7 +342,7 @@ const parseStoredDateTimeToMillis = (value?: string | null): number => {
     ).getTime();
   }
 
-  const fallback = new Date(value).getTime();
+  const fallback = new Date(normalizedValue).getTime();
   return Number.isNaN(fallback) ? 0 : fallback;
 };
 
@@ -399,6 +400,35 @@ const rollbackTransaction = async (database: SQLite.SQLiteDatabase, context: str
   } catch (rollbackError) {
     console.error(`[${context}] 回滚失败:`, rollbackError);
   }
+};
+
+const padDatePart = (value: string | number): string => String(value).padStart(2, '0');
+
+const normalizeStoredDateTimeString = (value?: string | null): string | null => {
+  if (!value) {
+    return value ?? null;
+  }
+
+  const normalizedValue = value.trim();
+  const match = normalizedValue.match(
+    /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+
+  if (!match) {
+    return normalizedValue;
+  }
+
+  const [, year, month, day, hours, minutes, seconds] = match;
+  const normalizedDate = `${year}/${padDatePart(month)}/${padDatePart(day)}`;
+
+  if (hours === undefined || minutes === undefined) {
+    return normalizedDate;
+  }
+
+  const normalizedTime = `${padDatePart(hours)}:${padDatePart(minutes)}`;
+  return seconds !== undefined
+    ? `${normalizedDate} ${normalizedTime}:${padDatePart(seconds)}`
+    : `${normalizedDate} ${normalizedTime}`;
 };
 
 // 获取数据库实例
@@ -807,7 +837,7 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
 };
 
 // 数据库版本号（当表结构变化时递增）
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDatabase): Promise<void> => {
   const inboundTable = await database.getFirstAsync<{ sql: string | null }>(
@@ -929,6 +959,67 @@ const ensureRuleFieldPrefixesColumn = async (database: SQLite.SQLiteDatabase): P
   console.log('[DB Migration] 为二维码规则表添加字段前缀配置列...');
   await database.execAsync('ALTER TABLE qr_code_rules ADD COLUMN field_prefixes TEXT');
   console.log('[DB Migration] 字段前缀配置列添加完成');
+};
+
+const normalizeDateTimeColumns = async (
+  database: SQLite.SQLiteDatabase,
+  tableName: string,
+  idColumn: string,
+  columns: string[]
+) => {
+  const selectColumns = [idColumn, ...columns].join(', ');
+  const rows = await database.getAllAsync<Record<string, string | null>>(
+    `SELECT ${selectColumns} FROM ${tableName}`
+  );
+
+  for (const row of rows) {
+    const updateFields: string[] = [];
+    const values: string[] = [];
+
+    columns.forEach(column => {
+      const originalValue = row[column];
+      const normalizedValue = normalizeStoredDateTimeString(originalValue);
+      if (typeof originalValue === 'string' && normalizedValue && normalizedValue !== originalValue) {
+        updateFields.push(`${column} = ?`);
+        values.push(normalizedValue);
+      }
+    });
+
+    if (updateFields.length === 0) {
+      continue;
+    }
+
+    values.push(String(row[idColumn]));
+    await database.runAsync(
+      `UPDATE ${tableName} SET ${updateFields.join(', ')} WHERE ${idColumn} = ?`,
+      values
+    );
+  }
+};
+
+const normalizeLegacyDateTimeColumns = async (database: SQLite.SQLiteDatabase): Promise<void> => {
+  console.log('[DB Migration] 规范化历史时间字段格式...');
+  await database.execAsync('BEGIN TRANSACTION');
+
+  try {
+    await normalizeDateTimeColumns(database, 'orders', 'id', ['created_at']);
+    await normalizeDateTimeColumns(database, 'materials', 'id', ['scanned_at']);
+    await normalizeDateTimeColumns(database, 'unpack_records', 'id', ['unpacked_at', 'printed_at', 'created_at', 'updated_at']);
+    await normalizeDateTimeColumns(database, 'print_history', 'id', ['printed_at', 'created_at']);
+    await normalizeDateTimeColumns(database, 'qr_code_rules', 'id', ['created_at', 'updated_at']);
+    await normalizeDateTimeColumns(database, 'custom_fields', 'id', ['created_at', 'updated_at']);
+    await normalizeDateTimeColumns(database, 'warehouses', 'id', ['created_at']);
+    await normalizeDateTimeColumns(database, 'inventory_bindings', 'id', ['created_at']);
+    await normalizeDateTimeColumns(database, 'inbound_records', 'id', ['created_at']);
+    await normalizeDateTimeColumns(database, 'inbound_summary', 'id', ['created_at', 'updated_at']);
+    await normalizeDateTimeColumns(database, 'inventory_check_records', 'id', ['created_at']);
+    await database.execAsync('COMMIT');
+    console.log('[DB Migration] 历史时间字段规范化完成');
+  } catch (error) {
+    await rollbackTransaction(database, 'normalizeLegacyDateTimeColumns');
+    console.error('[DB Migration] 历史时间字段规范化失败:', error);
+    throw error;
+  }
 };
 
 // 初始化数据库
@@ -1250,6 +1341,9 @@ const performDatabaseInitialization = async (): Promise<void> => {
 
     await migrateInboundAndInventoryRecordTables(db);
     await ensureRuleFieldPrefixesColumn(db);
+    if (currentVersion < 3) {
+      await normalizeLegacyDateTimeColumns(db);
+    }
 
     await db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_orders_warehouse_created
@@ -1530,12 +1624,19 @@ export interface OrderMaterialSummary {
   todayCount: number;
 }
 
-const toDateKeys = (date: Date) => ({
-  local: `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`,
-  order: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-});
+const toDateKeys = (date: Date) => {
+  const year = date.getFullYear();
+  const month = padDatePart(date.getMonth() + 1);
+  const day = padDatePart(date.getDate());
 
-const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; order: string }> => {
+  return {
+    local: `${year}/${month}/${day}`,
+    legacyLocal: `${year}/${Number(month)}/${Number(day)}`,
+    order: `${year}-${month}-${day}`,
+  };
+};
+
+const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; legacyLocal: string; order: string }> => {
   if (filter === 'all') return [];
 
   const days = filter === 'today' ? 1 : filter === 'threeDays' ? 3 : 7;
@@ -1544,6 +1645,12 @@ const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; o
     date.setDate(date.getDate() - index);
     return toDateKeys(date);
   });
+};
+
+const getLocalDatePrefixesForFilter = (filter: OrderTimeFilter): string[] => {
+  return [...new Set(
+    getDateKeysForFilter(filter).flatMap(item => [item.local, item.legacyLocal])
+  )];
 };
 
 const appendDateLikeWhere = (
@@ -1604,7 +1711,7 @@ const filterMaterialsInMemory = (
   warehouseId?: string,
   timeFilter: OrderTimeFilter = 'all',
 ) => {
-  const allowedDates = new Set(getDateKeysForFilter(timeFilter).map(item => item.local));
+  const allowedDates = new Set(getLocalDatePrefixesForFilter(timeFilter));
   return materials.filter(material => (
     (!warehouseId || material.warehouse_id === warehouseId) &&
     (allowedDates.size === 0 || allowedDates.has((material.scanned_at || '').split(' ')[0]))
@@ -1734,7 +1841,7 @@ const getMaterialTotalsByFilter = async (
     conditions,
     queryParams,
     'scanned_at',
-    getDateKeysForFilter(filter).map(item => item.local),
+    getLocalDatePrefixesForFilter(filter),
   );
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1876,12 +1983,12 @@ export const getOrderMaterialSummaries = async (params: {
       whereParams.push(params.warehouseId);
     }
 
-    appendDateLikeWhere(
-      conditions,
-      whereParams,
-      'scanned_at',
-      getDateKeysForFilter(timeFilter).map(item => item.local),
-    );
+  appendDateLikeWhere(
+    conditions,
+    whereParams,
+    'scanned_at',
+    getLocalDatePrefixesForFilter(timeFilter),
+  );
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const results = await database.getAllAsync<OrderMaterialSummary>(
@@ -1948,7 +2055,7 @@ export const getOrderMaterialsByModel = async (params: {
       conditions,
       queryParams,
       'scanned_at',
-      getDateKeysForFilter(timeFilter).map(item => item.local),
+      getLocalDatePrefixesForFilter(timeFilter),
     );
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -3248,10 +3355,40 @@ export const deleteWarehouse = async (id: string): Promise<void> => {
 
     try {
       const trimmedId = id.trim();
+      const unpackRows = await database.getAllAsync<{ id: string }>(
+        'SELECT id FROM unpack_records WHERE warehouse_id = ?',
+        [trimmedId]
+      );
+      const unpackIdSet = new Set(unpackRows.map(row => row.id));
+
+      if (unpackIdSet.size > 0) {
+        const printHistoryRows = await database.getAllAsync<{ id: string; unpack_record_ids: string }>(
+          'SELECT id, unpack_record_ids FROM print_history'
+        );
+
+        for (const row of printHistoryRows) {
+          const unpackRecordIds = stringToJson<string[]>(row.unpack_record_ids) || [];
+          const remainingIds = unpackRecordIds.filter(recordId => !unpackIdSet.has(recordId));
+
+          if (remainingIds.length === unpackRecordIds.length) {
+            continue;
+          }
+
+          if (remainingIds.length === 0) {
+            await database.runAsync('DELETE FROM print_history WHERE id = ?', [row.id]);
+          } else {
+            await database.runAsync(
+              'UPDATE print_history SET unpack_record_ids = ? WHERE id = ?',
+              [jsonToString(remainingIds), row.id]
+            );
+          }
+        }
+      }
 
       // 删除该仓库的所有相关数据
-      // 1. 删除入库记录
+      // 1. 删除入库记录和汇总
       await database.runAsync('DELETE FROM inbound_records WHERE warehouse_id = ?', [trimmedId]);
+      await database.runAsync('DELETE FROM inbound_summary WHERE warehouse_id = ?', [trimmedId]);
 
       // 2. 删除盘点记录
       await database.runAsync('DELETE FROM inventory_check_records WHERE warehouse_id = ?', [trimmedId]);

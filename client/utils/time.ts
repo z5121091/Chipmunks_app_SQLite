@@ -9,13 +9,13 @@
 
 /**
  * 获取指定时间或当前时间（用于存储/导出/备份）
- * 格式：YYYY/M/D HH:mm (不补零，更紧凑)
+ * 格式：YYYY/MM/DD HH:mm
  */
 export const getISODateTime = (date: Date = new Date()): string => {
   const now = date;
   const year = now.getFullYear();
-  const month = now.getMonth() + 1;  // 不补零
-  const day = now.getDate();  // 不补零
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
   return `${year}/${month}/${day} ${hours}:${minutes}`;
@@ -125,13 +125,13 @@ export const getToday = (): string => {
 
 /**
  * 获取今天的日期（本地格式，用于数据库日期比较）
- * 格式：YYYY/M/D (不补零，与数据库存储格式一致)
+ * 格式：YYYY/MM/DD
  */
 export const getTodayLocal = (): string => {
   const now = new Date();
   const year = now.getFullYear();
-  const month = now.getMonth() + 1;  // 不补零
-  const day = now.getDate();  // 不补零
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
   return `${year}/${month}/${day}`;
 };
 

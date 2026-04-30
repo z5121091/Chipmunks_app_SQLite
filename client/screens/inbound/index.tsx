@@ -18,6 +18,7 @@ import { createStyles } from './styles';
 import { useCustomAlert } from '@/components/CustomAlert';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeJsonParseNullable } from '@/utils/json';
 import {
   Warehouse,
   getAllWarehouses,
@@ -249,13 +250,24 @@ export default function InboundScreen() {
     try {
       const savedRecords = await AsyncStorage.getItem(INBOUND_SCAN_RECORDS_KEY);
       if (savedRecords) {
-        const records = JSON.parse(savedRecords) as ScanRecord[];
+        const records = safeJsonParseNullable<ScanRecord[]>(savedRecords, 'inbound.scanRecords');
+        if (!records) {
+          return null;
+        }
         let restoredInboundNo: string | null = null;
 
         // 恢复供应商和入库单号，同时检查仓库是否匹配
         const pendingData = await AsyncStorage.getItem(INBOUND_PENDING_DATA_KEY);
         if (pendingData) {
-          const data = JSON.parse(pendingData);
+          const data = safeJsonParseNullable<{
+            supplier?: string | null;
+            inboundNo?: string;
+            warehouseId?: string;
+            warehouseName?: string;
+          }>(pendingData, 'inbound.pendingData');
+          if (!data) {
+            return null;
+          }
 
           // 验证保存时的仓库是否与当前仓库匹配（使用传入的 warehouse 参数，避免状态闭包问题）
           const currentWarehouseId = warehouse?.id;
@@ -361,9 +373,9 @@ export default function InboundScreen() {
         let warehouse: Warehouse | null = null;
         const savedWarehouse = await AsyncStorage.getItem(GLOBAL_WAREHOUSE_KEY);
         if (savedWarehouse) {
-          const saved = JSON.parse(savedWarehouse) as Warehouse;
+          const saved = safeJsonParseNullable<Warehouse>(savedWarehouse, 'inbound.globalWarehouse');
           // 确保仓库仍然存在
-          if (list.find(w => w.id === saved.id)) {
+          if (saved && list.find(w => w.id === saved.id)) {
             warehouse = saved;
           }
         }

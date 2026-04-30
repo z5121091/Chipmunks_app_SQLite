@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeJsonParseNullable } from '@/utils/json';
 import { useTheme } from '@/hooks/useTheme';
 import { Screen } from '@/components/Screen';
 import { createStyles } from './styles';
@@ -361,9 +362,9 @@ export default function PDAScanScreen() {
         let warehouse: Warehouse | null = null;
         const savedWarehouse = await AsyncStorage.getItem(STORAGE_KEYS.GLOBAL_WAREHOUSE);
         if (savedWarehouse) {
-          const saved = JSON.parse(savedWarehouse) as Warehouse;
+          const saved = safeJsonParseNullable<Warehouse>(savedWarehouse, 'outbound.globalWarehouse');
           // 确保仓库仍然存在
-          if (list.find(w => w.id === saved.id)) {
+          if (saved && list.find(w => w.id === saved.id)) {
             warehouse = saved;
           }
         }

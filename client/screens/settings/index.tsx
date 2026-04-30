@@ -55,6 +55,7 @@ import { rs } from '@/utils/responsive';
 import { APP_VERSION, APP_NAME, COMPANY_NAME, COMPANY_WEBSITE, AUTHOR } from '@/constants/version';
 import { feedbackSuccess, feedbackWarning, setSoundEnabled as setSoundEnabledFn, initSoundSetting } from '@/utils/feedback';
 import { syncExcelToComputer, ExcelSheet } from '@/utils/excel';
+import { safeJsonParseNullable } from '@/utils/json';
 import { 
   testConnection, 
   useHeartbeat 
@@ -73,6 +74,7 @@ const FileSystem = FileSystemLegacy as any;
 // 更新服务器配置（请修改为你的NAS地址）
 // 完整URL（含认证信息），兼容Android 7.0
 const DEFAULT_UPDATE_SERVER = UPDATE_CONFIG.DEFAULT_SERVER;
+const INVENTORY_PENDING_WAREHOUSE_KEY = 'inventory_pending_warehouse';
 
 export default function SettingsScreen() {
   const { theme, isDark } = useTheme();
@@ -174,7 +176,11 @@ export default function SettingsScreen() {
       setUpdateServerDisplayUrl(extractDisplayUrl(savedUpdateServer));
     }
     if (savedSyncConfig) {
-      const config = JSON.parse(savedSyncConfig);
+      const config = safeJsonParseNullable<SyncConfig>(savedSyncConfig, 'settings.syncConfig');
+      if (!config) {
+        setConnectionStatus('idle');
+        return;
+      }
       setSyncConfig(config);
       
       // 如果之前是已连接状态，自动验证连接
@@ -247,6 +253,18 @@ export default function SettingsScreen() {
       heartbeatTimerRef.current = null;
     }
   };
+
+  const clearLocalDraftStorage = useCallback(async () => {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.INBOUND_SCAN_RECORDS,
+      STORAGE_KEYS.INBOUND_PENDING_DATA,
+      STORAGE_KEYS.INVENTORY_CHECK_RECORDS,
+      STORAGE_KEYS.INVENTORY_CHECK_TYPE,
+      INVENTORY_PENDING_WAREHOUSE_KEY,
+      STORAGE_KEYS.OUTBOUND_ORDER_NO,
+      STORAGE_KEYS.OUTBOUND_SCAN_RECORDS,
+    ]);
+  }, []);
   
   // IP变更
   const handleIpChange = (text: string) => {
@@ -1344,6 +1362,7 @@ export default function SettingsScreen() {
                 async () => {
                   try {
                     await clearAllBusinessData();
+                    await clearLocalDraftStorage();
                     alert.showSuccess('业务数据已清空，配置已保留');
                     loadData();
                   } catch (error) {
