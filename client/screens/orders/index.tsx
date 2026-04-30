@@ -19,12 +19,10 @@ import {
   deleteOrder,
   getMaterialsByOrder,
   deleteMaterial,
-  addUnpackRecord,
   getNextUnpackIndex,
   getUnpackHistoryByMaterialId,
-  getAllUnpackRecords,
   updateMaterial,
-  generateId,
+  saveUnpackOperation,
   Order,
   MaterialRecord,
   UnpackRecord,
@@ -714,62 +712,12 @@ export default function OrdersScreen() {
     
     setUnpacking(true);
     try {
-      // 生成配对ID，关联发货标签和剩余标签
-      const pairId = generateId();
-
-      // 1. 添加拆包记录（同时更新原物料的拆包状态和剩余数量）
-      await addUnpackRecord({
-        original_material_id: unpackingMaterial.id!,
-        order_no: unpackingMaterial.order_no,
-        customer_name: unpackingMaterial.customer_name || '',
-        model: unpackingMaterial.model,
-        batch: unpackingMaterial.batch || '',
-        package: unpackingMaterial.package || '',
-        version: unpackingMaterial.version || '',
-        warehouse_id: unpackingMaterial.warehouse_id,
-        warehouse_name: unpackingMaterial.warehouse_name,
-        inventory_code: unpackingMaterial.inventory_code,
-        original_quantity: (unpackingMaterial.remaining_quantity || unpackingMaterial.quantity).toString(),
-        new_quantity: unpackNewQuantity.toString(),
-        productionDate: unpackingMaterial.productionDate || '',
-        traceNo: unpackingMaterial.traceNo,
-        new_traceNo: unpackNewTraceNo,
-        sourceNo: unpackingMaterial.sourceNo,
-        label_type: 'shipped',
-        pair_id: pairId,
-        status: 'pending',
+      const unpackResult = await saveUnpackOperation({
+        material: unpackingMaterial,
+        shippedQuantity: newQty,
+        remainingQuantity: remainingQty,
+        newTraceNo: unpackNewTraceNo,
         notes: unpackNotes,
-      });
-
-      // 2. 添加剩余标签记录
-      await addUnpackRecord({
-        original_material_id: unpackingMaterial.id!,
-        order_no: unpackingMaterial.order_no,
-        customer_name: unpackingMaterial.customer_name || '',
-        model: unpackingMaterial.model,
-        batch: unpackingMaterial.batch || '',
-        package: unpackingMaterial.package || '',
-        version: unpackingMaterial.version || '',
-        warehouse_id: unpackingMaterial.warehouse_id,
-        warehouse_name: unpackingMaterial.warehouse_name,
-        inventory_code: unpackingMaterial.inventory_code,
-        original_quantity: (unpackingMaterial.remaining_quantity || unpackingMaterial.quantity).toString(),
-        new_quantity: remainingQty.toString(),
-        productionDate: unpackingMaterial.productionDate || '',
-        traceNo: unpackingMaterial.traceNo,
-        new_traceNo: unpackNewTraceNo,
-        sourceNo: unpackingMaterial.sourceNo,
-        label_type: 'remaining',
-        pair_id: pairId,
-        status: 'pending',
-        notes: unpackNotes,
-      });
-      
-      // 2. 更新原物料的追溯码（变成新生成的追溯码）和剩余数量
-      await updateMaterial(unpackingMaterial.id!, {
-        traceNo: unpackNewTraceNo,
-        quantity: newQty,                       // 累计发货数量（number 类型）
-        remaining_quantity: remainingQty.toString(),  // 剩余数量（string 类型）
       });
       
       // 2. 刷新物料列表（短暂延迟确保 AsyncStorage 写入完成）
@@ -788,14 +736,7 @@ export default function OrdersScreen() {
           {
             text: '同步到电脑',
             onPress: async () => {
-              // 获取刚生成的两条标签（只查询当前仓库）
-              const records = await getAllUnpackRecords(currentWarehouse?.id);
-              const shippedRecord = records.find(r => r.new_traceNo === unpackNewTraceNo && r.label_type === 'shipped');
-              const remainingRecord = records.find(r => r.traceNo === unpackingMaterial.traceNo && r.label_type === 'remaining' && r.pair_id === shippedRecord?.pair_id);
-              
-              if (shippedRecord && remainingRecord) {
-                handleSyncUnpackToComputer(shippedRecord, remainingRecord);
-              }
+              handleSyncUnpackToComputer(unpackResult.shippedRecord, unpackResult.remainingRecord);
             },
           },
         ],

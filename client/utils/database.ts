@@ -393,6 +393,14 @@ const sortRulesByPriority = (rules: QRCodeRule[]): QRCodeRule[] => {
   });
 };
 
+const rollbackTransaction = async (database: SQLite.SQLiteDatabase, context: string) => {
+  try {
+    await database.execAsync('ROLLBACK');
+  } catch (rollbackError) {
+    console.error(`[${context}] 回滚失败:`, rollbackError);
+  }
+};
+
 // 获取数据库实例
 const getDb = (): SQLite.SQLiteDatabase => {
   if (isWebPlatform) {
@@ -2574,36 +2582,48 @@ export const updateMaterialQuantity = async (
   }
 };
 
+type MaterialUpdatePayload = Partial<Pick<MaterialRecord, 'model' | 'batch' | 'quantity' | 'package' | 'version' | 'productionDate' | 'traceNo' | 'sourceNo' | 'customer_name' | 'remaining_quantity'>>;
+
+const updateMaterialWithDatabase = async (
+  database: SQLite.SQLiteDatabase,
+  id: string,
+  updates: MaterialUpdatePayload
+): Promise<void> => {
+  const updateFields: string[] = [];
+  const values: any[] = [];
+
+  Object.entries(updates).forEach(([key, value]) => {
+    if (value !== undefined) {
+      updateFields.push(`${key} = ?`);
+
+      // 确保 INTEGER 类型的字段传入 number 类型
+      if (key === 'quantity' || key === 'isUnpacked' || key === 'rule_id') {
+        values.push(Number(value));
+      } else {
+        values.push(value);
+      }
+    }
+  });
+
+  if (updateFields.length === 0) {
+    return;
+  }
+
+  values.push(id);
+  await database.runAsync(
+    `UPDATE materials SET ${updateFields.join(', ')} WHERE id = ?`,
+    values
+  );
+};
+
 // 更新物料信息
 export const updateMaterial = async (
   id: string,
-  updates: Partial<Pick<MaterialRecord, 'model' | 'batch' | 'quantity' | 'package' | 'version' | 'productionDate' | 'traceNo' | 'sourceNo' | 'customer_name' | 'remaining_quantity'>>
+  updates: MaterialUpdatePayload
 ): Promise<void> => {
   try {
     const database = getDb();
-    const updateFields: string[] = [];
-    const values: any[] = [];
-    
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value !== undefined) {
-        updateFields.push(`${key} = ?`);
-
-        // 确保 INTEGER 类型的字段传入 number 类型
-        if (key === 'quantity' || key === 'isUnpacked' || key === 'rule_id') {
-          values.push(Number(value));
-        } else {
-          values.push(value);
-        }
-      }
-    });
-    
-    if (updateFields.length > 0) {
-      values.push(id);
-      await database.runAsync(
-        `UPDATE materials SET ${updateFields.join(', ')} WHERE id = ?`,
-        values
-      );
-    }
+    await updateMaterialWithDatabase(database, id, updates);
   } catch (error) {
     console.error('更新物料信息失败:', error);
     throw error;
@@ -2736,8 +2756,7 @@ export const getPrintedUnpackRecords = async (): Promise<UnpackRecord[]> => {
   }
 };
 
-// 添加拆包记录
-export const addUnpackRecord = async (record: {
+type UnpackRecordInsert = {
   original_material_id: string;
   order_no: string;
   customer_name: string;
@@ -2759,50 +2778,186 @@ export const addUnpackRecord = async (record: {
   status: 'pending' | 'printed';
   notes: string;
   unpacked_at?: string;
-}): Promise<string> => {
+};
+
+const insertUnpackRecord = async (
+  database: SQLite.SQLiteDatabase,
+  record: UnpackRecordInsert,
+  options?: {
+    id?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    unpackedAt?: string;
+  }
+): Promise<UnpackRecord> => {
+  const id = options?.id || generateId();
+  const createdAt = options?.createdAt || getISODateTime();
+  const updatedAt = options?.updatedAt || createdAt;
+  const unpackedAt = options?.unpackedAt || record.unpacked_at || createdAt;
+
+  await database.runAsync(
+    `INSERT INTO unpack_records (
+      id, original_material_id, order_no, customer_name, model, batch, package, version,
+      warehouse_id, warehouse_name, inventory_code, original_quantity, new_quantity,
+      productionDate, traceNo, new_traceNo, sourceNo, label_type, pair_id, status,
+      notes, unpacked_at, printed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      record.original_material_id,
+      record.order_no,
+      record.customer_name,
+      record.model,
+      record.batch,
+      record.package,
+      record.version,
+      record.warehouse_id || null,
+      record.warehouse_name || null,
+      record.inventory_code || null,
+      record.original_quantity,
+      record.new_quantity,
+      record.productionDate,
+      record.traceNo,
+      record.new_traceNo,
+      record.sourceNo,
+      record.label_type,
+      record.pair_id,
+      record.status,
+      record.notes,
+      unpackedAt,
+      null,
+      createdAt,
+      updatedAt,
+    ]
+  );
+
+  return {
+    id,
+    original_material_id: record.original_material_id,
+    order_no: record.order_no,
+    customer_name: record.customer_name,
+    model: record.model,
+    batch: record.batch,
+    package: record.package,
+    version: record.version,
+    warehouse_id: record.warehouse_id,
+    warehouse_name: record.warehouse_name,
+    inventory_code: record.inventory_code,
+    original_quantity: record.original_quantity,
+    new_quantity: record.new_quantity,
+    productionDate: record.productionDate,
+    traceNo: record.traceNo,
+    new_traceNo: record.new_traceNo,
+    sourceNo: record.sourceNo,
+    label_type: record.label_type,
+    pair_id: record.pair_id,
+    status: record.status,
+    notes: record.notes,
+    unpacked_at: unpackedAt,
+    printed_at: null,
+    created_at: createdAt,
+    updated_at: updatedAt,
+  };
+};
+
+// 添加拆包记录
+export const addUnpackRecord = async (record: UnpackRecordInsert): Promise<string> => {
   try {
+    if (!db) {
+      console.warn('[addUnpackRecord] 数据库未初始化，等待初始化...');
+      await initDatabase();
+    }
+
     const database = getDb();
-    const id = generateId();
-    
-    await database.runAsync(
-      `INSERT INTO unpack_records (
-        id, original_material_id, order_no, customer_name, model, batch, package, version,
-        warehouse_id, warehouse_name, inventory_code, original_quantity, new_quantity,
-        productionDate, traceNo, new_traceNo, sourceNo, label_type, pair_id, status,
-        notes, unpacked_at, printed_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        record.original_material_id,
-        record.order_no,
-        record.customer_name,
-        record.model,
-        record.batch,
-        record.package,
-        record.version,
-        record.warehouse_id || null,
-        record.warehouse_name || null,
-        record.inventory_code || null,
-        record.original_quantity,
-        record.new_quantity,
-        record.productionDate,
-        record.traceNo,
-        record.new_traceNo,
-        record.sourceNo,
-        record.label_type,
-        record.pair_id,
-        record.status,
-        record.notes,
-        record.unpacked_at || getISODateTime(),
-        null,
-        getISODateTime(),
-        getISODateTime(),
-      ]
-    );
-    
-    return id;
+    const insertedRecord = await insertUnpackRecord(database, record);
+    return insertedRecord.id;
   } catch (error) {
     console.error('添加拆包记录失败:', error);
+    throw error;
+  }
+};
+
+export const saveUnpackOperation = async (params: {
+  material: MaterialRecord;
+  shippedQuantity: number;
+  remainingQuantity: number;
+  newTraceNo: string;
+  notes?: string;
+}): Promise<{
+  pairId: string;
+  shippedRecord: UnpackRecord;
+  remainingRecord: UnpackRecord;
+}> => {
+  if (!params.material.id) {
+    throw new Error('原物料缺少 ID，无法拆包');
+  }
+
+  if (!db) {
+    console.warn('[saveUnpackOperation] 数据库未初始化，等待初始化...');
+    await initDatabase();
+  }
+
+  const database = getDb();
+  const pairId = generateId();
+  const originalQuantity = (params.material.remaining_quantity || params.material.quantity || 0).toString();
+  const notes = params.notes || '';
+  const timestamp = getISODateTime();
+
+  const baseRecord = {
+    original_material_id: params.material.id,
+    order_no: params.material.order_no,
+    customer_name: params.material.customer_name || '',
+    model: params.material.model,
+    batch: params.material.batch || '',
+    package: params.material.package || '',
+    version: params.material.version || '',
+    warehouse_id: params.material.warehouse_id,
+    warehouse_name: params.material.warehouse_name,
+    inventory_code: params.material.inventory_code,
+    original_quantity: originalQuantity,
+    productionDate: params.material.productionDate || '',
+    traceNo: params.material.traceNo || '',
+    new_traceNo: params.newTraceNo,
+    sourceNo: params.material.sourceNo || '',
+    pair_id: pairId,
+    status: 'pending' as const,
+    notes,
+    unpacked_at: timestamp,
+  };
+
+  await database.execAsync('BEGIN TRANSACTION');
+  try {
+    const shippedRecord = await insertUnpackRecord(database, {
+      ...baseRecord,
+      new_quantity: params.shippedQuantity.toString(),
+      label_type: 'shipped',
+    }, {
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      unpackedAt: timestamp,
+    });
+
+    const remainingRecord = await insertUnpackRecord(database, {
+      ...baseRecord,
+      new_quantity: params.remainingQuantity.toString(),
+      label_type: 'remaining',
+    }, {
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      unpackedAt: timestamp,
+    });
+
+    await updateMaterialWithDatabase(database, params.material.id, {
+      traceNo: params.newTraceNo,
+      quantity: params.shippedQuantity,
+      remaining_quantity: params.remainingQuantity.toString(),
+    });
+
+    await database.execAsync('COMMIT');
+    return { pairId, shippedRecord, remainingRecord };
+  } catch (error) {
+    await rollbackTransaction(database, 'saveUnpackOperation');
+    console.error('保存拆包操作失败:', error);
     throw error;
   }
 };
@@ -3381,8 +3536,57 @@ export const getAllInboundRecords = async (warehouseId?: string): Promise<Inboun
   }
 };
 
+type InboundRecordInsert = Omit<InboundRecord, 'id' | 'created_at'>;
+
+const insertInboundRecord = async (
+  database: SQLite.SQLiteDatabase,
+  record: InboundRecordInsert,
+  options?: {
+    id?: string;
+    createdAt?: string;
+  }
+): Promise<string> => {
+  const id = options?.id || generateId();
+  const createdAt = options?.createdAt || getISODateTime();
+  const quantity = parseQuantity(record.quantity, { min: 1 });
+
+  if (quantity === null) {
+    throw new Error('入库数量无效，必须为大于 0 的整数');
+  }
+
+  await database.runAsync(
+    `INSERT INTO inbound_records (
+      id, inbound_no, warehouse_id, warehouse_name, inventory_code, scan_model, batch,
+      quantity, in_date, notes, raw_content, created_at, package, version,
+      productionDate, traceNo, sourceNo, customFields
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      record.inbound_no,
+      record.warehouse_id,
+      record.warehouse_name,
+      record.inventory_code || null,
+      record.scan_model,
+      record.batch || null,
+      quantity,
+      record.in_date,
+      record.notes || null,
+      record.rawContent || null,
+      createdAt,
+      record.package || null,
+      record.version || null,
+      record.productionDate || null,
+      record.traceNo || null,
+      record.sourceNo || null,
+      record.customFields ? jsonToString(record.customFields) : null,
+    ]
+  );
+
+  return id;
+};
+
 // 添加入库记录
-export const addInboundRecord = async (record: Omit<InboundRecord, 'id' | 'created_at'>): Promise<string> => {
+export const addInboundRecord = async (record: InboundRecordInsert): Promise<string> => {
   try {
     if (!db) {
       console.warn('[addInboundRecord] 数据库未初始化，等待初始化...');
@@ -3390,44 +3594,40 @@ export const addInboundRecord = async (record: Omit<InboundRecord, 'id' | 'creat
     }
 
     const database = getDb();
-    const id = generateId();
-    const quantity = parseQuantity(record.quantity, { min: 1 });
-
-    if (quantity === null) {
-      throw new Error('入库数量无效，必须为大于 0 的整数');
-    }
-
-    await database.runAsync(
-      `INSERT INTO inbound_records (
-        id, inbound_no, warehouse_id, warehouse_name, inventory_code, scan_model, batch,
-        quantity, in_date, notes, raw_content, created_at, package, version,
-        productionDate, traceNo, sourceNo, customFields
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        record.inbound_no,
-        record.warehouse_id,
-        record.warehouse_name,
-        record.inventory_code || null,
-        record.scan_model,
-        record.batch || null,
-        quantity,
-        record.in_date,
-        record.notes || null,
-        record.rawContent || null,
-        getISODateTime(),
-        record.package || null,
-        record.version || null,
-        record.productionDate || null,
-        record.traceNo || null,
-        record.sourceNo || null,
-        record.customFields ? jsonToString(record.customFields) : null,
-      ]
-    );
-
-    return id;
+    return await insertInboundRecord(database, record);
   } catch (error) {
     console.error('添加入库记录失败:', error);
+    throw error;
+  }
+};
+
+export const addInboundRecordsBatch = async (records: InboundRecordInsert[]): Promise<string[]> => {
+  if (records.length === 0) {
+    return [];
+  }
+
+  try {
+    if (!db) {
+      console.warn('[addInboundRecordsBatch] 数据库未初始化，等待初始化...');
+      await initDatabase();
+    }
+
+    const database = getDb();
+    const ids: string[] = [];
+    await database.execAsync('BEGIN TRANSACTION');
+
+    try {
+      for (const record of records) {
+        ids.push(await insertInboundRecord(database, record));
+      }
+      await database.execAsync('COMMIT');
+      return ids;
+    } catch (error) {
+      await rollbackTransaction(database, 'addInboundRecordsBatch');
+      throw error;
+    }
+  } catch (error) {
+    console.error('批量添加入库记录失败:', error);
     throw error;
   }
 };
@@ -3614,8 +3814,65 @@ export const getAllInventoryCheckRecords = async (warehouseId?: string): Promise
   }
 };
 
+type InventoryCheckRecordInsert = Omit<InventoryCheckRecord, 'id' | 'created_at'>;
+
+const insertInventoryCheckRecord = async (
+  database: SQLite.SQLiteDatabase,
+  record: InventoryCheckRecordInsert,
+  options?: {
+    id?: string;
+    createdAt?: string;
+  }
+): Promise<string> => {
+  const id = options?.id || generateId();
+  const createdAt = options?.createdAt || getISODateTime();
+  const quantity = parseQuantity(record.quantity, { min: 1 });
+  const actualQuantity = record.actual_quantity !== null && record.actual_quantity !== undefined
+    ? parseQuantity(record.actual_quantity, { min: 0 })
+    : null;
+
+  if (quantity === null) {
+    throw new Error('盘点数量无效，必须为大于 0 的整数');
+  }
+
+  if (record.actual_quantity !== null && record.actual_quantity !== undefined && actualQuantity === null) {
+    throw new Error('实际盘点数量无效，必须为不小于 0 的整数');
+  }
+
+  await database.runAsync(
+    `INSERT INTO inventory_check_records (
+      id, check_no, warehouse_id, warehouse_name, inventory_code, scan_model, batch,
+      quantity, check_type, actual_quantity, check_date, notes, created_at, package,
+      version, productionDate, traceNo, sourceNo, customFields
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      record.check_no,
+      record.warehouse_id,
+      record.warehouse_name,
+      record.inventory_code,
+      record.scan_model,
+      record.batch,
+      quantity,
+      record.check_type,
+      actualQuantity,
+      record.check_date,
+      record.notes || null,
+      createdAt,
+      record.package || null,
+      record.version || null,
+      record.productionDate || null,
+      record.traceNo || null,
+      record.sourceNo || null,
+      record.customFields ? jsonToString(record.customFields) : null,
+    ]
+  );
+
+  return id;
+};
+
 // 添加盘点记录
-export const addInventoryCheckRecord = async (record: Omit<InventoryCheckRecord, 'id' | 'created_at'>): Promise<string> => {
+export const addInventoryCheckRecord = async (record: InventoryCheckRecordInsert): Promise<string> => {
   try {
     if (!db) {
       console.warn('[addInventoryCheckRecord] 数据库未初始化，等待初始化...');
@@ -3623,52 +3880,40 @@ export const addInventoryCheckRecord = async (record: Omit<InventoryCheckRecord,
     }
 
     const database = getDb();
-    const id = generateId();
-    const quantity = parseQuantity(record.quantity, { min: 1 });
-    const actualQuantity = record.actual_quantity !== null && record.actual_quantity !== undefined
-      ? parseQuantity(record.actual_quantity, { min: 0 })
-      : null;
-
-    if (quantity === null) {
-      throw new Error('盘点数量无效，必须为大于 0 的整数');
-    }
-
-    if (record.actual_quantity !== null && record.actual_quantity !== undefined && actualQuantity === null) {
-      throw new Error('实际盘点数量无效，必须为不小于 0 的整数');
-    }
-    
-    await database.runAsync(
-      `INSERT INTO inventory_check_records (
-        id, check_no, warehouse_id, warehouse_name, inventory_code, scan_model, batch,
-        quantity, check_type, actual_quantity, check_date, notes, created_at, package,
-        version, productionDate, traceNo, sourceNo, customFields
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        record.check_no,
-        record.warehouse_id,
-        record.warehouse_name,
-        record.inventory_code,
-        record.scan_model,
-        record.batch,
-        quantity,
-        record.check_type,
-        actualQuantity,
-        record.check_date,
-        record.notes || null,
-        getISODateTime(),
-        record.package || null,
-        record.version || null,
-        record.productionDate || null,
-        record.traceNo || null,
-        record.sourceNo || null,
-        record.customFields ? jsonToString(record.customFields) : null,
-      ]
-    );
-    
-    return id;
+    return await insertInventoryCheckRecord(database, record);
   } catch (error) {
     console.error('添加盘点记录失败:', error);
+    throw error;
+  }
+};
+
+export const addInventoryCheckRecordsBatch = async (records: InventoryCheckRecordInsert[]): Promise<string[]> => {
+  if (records.length === 0) {
+    return [];
+  }
+
+  try {
+    if (!db) {
+      console.warn('[addInventoryCheckRecordsBatch] 数据库未初始化，等待初始化...');
+      await initDatabase();
+    }
+
+    const database = getDb();
+    const ids: string[] = [];
+    await database.execAsync('BEGIN TRANSACTION');
+
+    try {
+      for (const record of records) {
+        ids.push(await insertInventoryCheckRecord(database, record));
+      }
+      await database.execAsync('COMMIT');
+      return ids;
+    } catch (error) {
+      await rollbackTransaction(database, 'addInventoryCheckRecordsBatch');
+      throw error;
+    }
+  } catch (error) {
+    console.error('批量添加盘点记录失败:', error);
     throw error;
   }
 };

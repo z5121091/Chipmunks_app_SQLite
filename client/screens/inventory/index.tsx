@@ -26,7 +26,7 @@ import {
   detectRule,
   parseWithRule,
   getInventoryCodeByModel,
-  addInventoryCheckRecord,
+  addInventoryCheckRecordsBatch,
   generateCheckNo,
   getAllInventoryCheckRecords,
   InventoryCheckRecord,
@@ -743,30 +743,27 @@ export default function InventoryScreen() {
       const today = formatDate(new Date().toISOString());
       console.log('[库存盘点] 盘点单号:', checkNo);
 
-      for (const record of scanRecords) {
-        console.log('[库存盘点] 保存记录:', { model: record.model, quantity: record.quantity });
-        await addInventoryCheckRecord({
-          check_no: checkNo,
-          warehouse_id: currentWarehouse.id,
-          warehouse_name: currentWarehouse.name,
-          inventory_code: record.inventoryCode || '',
-          scan_model: record.model,
-          batch: record.batch,
-          quantity: record.quantity,  // 原始数量，不受盘点模式影响
-          check_type: checkType,
-          actual_quantity: checkType === 'partial' ? record.actualQuantity : undefined,  // 实际盘点数量
-          check_date: today,
-          notes: record.traceCode, // 保存追溯码到备注
-          // 扩展字段
-          package: record.package,
-          version: record.version,
-          productionDate: record.productionDate,
-          traceNo: record.traceNo,
-          sourceNo: record.sourceNo,
-          // 自定义字段
-          customFields: record.customFields,
-        });
-      }
+      const recordsToSave = scanRecords.map(record => ({
+        check_no: checkNo,
+        warehouse_id: currentWarehouse.id,
+        warehouse_name: currentWarehouse.name,
+        inventory_code: record.inventoryCode || '',
+        scan_model: record.model,
+        batch: record.batch,
+        quantity: record.quantity,
+        check_type: checkType,
+        actual_quantity: checkType === 'partial' ? record.actualQuantity : undefined,
+        check_date: today,
+        notes: record.traceCode,
+        package: record.package,
+        version: record.version,
+        productionDate: record.productionDate,
+        traceNo: record.traceNo,
+        sourceNo: record.sourceNo,
+        customFields: record.customFields,
+      }));
+
+      await addInventoryCheckRecordsBatch(recordsToSave);
 
       console.log('[库存盘点] 保存成功');
       showToast(`盘点成功！共 ${scanRecords.length} 条`, 'success');

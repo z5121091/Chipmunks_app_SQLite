@@ -22,7 +22,7 @@ import {
   Warehouse,
   getAllWarehouses,
   getDefaultWarehouse,
-  addInboundRecord,
+  addInboundRecordsBatch,
   getAllInboundRecords,
   updateInboundSummary,
   generateInboundNo,
@@ -726,80 +726,49 @@ export default function InboundScreen() {
     try {
       const today = formatDate(new Date().toISOString());
 
-      let successCount = 0;
-      let failCount = 0;
-      const errors: Array<{ record: ScanRecord; error: string }> = [];
+      const recordsToSave = scanRecords.map(record => ({
+        inbound_no: inboundNo,
+        warehouse_id: currentWarehouse.id,
+        warehouse_name: currentWarehouse.name,
+        inventory_code: record.inventoryCode || '',
+        scan_model: record.model,
+        batch: record.batch || '',
+        quantity: record.quantity,
+        in_date: today,
+        notes: '',
+        rawContent: record.rawContent || '',
+        package: record.package || '',
+        version: record.version || '',
+        productionDate: record.productionDate || '',
+        traceNo: record.traceNo || '',
+        sourceNo: record.sourceNo || '',
+        customFields: record.customFields,
+      }));
 
-      // 保存每条扫描记录
-      for (const record of scanRecords) {
-        try {
-          console.log('[handleSaveInbound] 开始保存记录:', {
-            id: record.id,
-            model: record.model,
-            batch: record.batch,
-            traceNo: record.traceNo,
-            rawContent: record.rawContent.substring(0, 50),
-          });
+      console.log('[handleSaveInbound] 开始批量保存入库记录:', {
+        count: recordsToSave.length,
+        inboundNo,
+        warehouseId: currentWarehouse.id,
+      });
 
-          await addInboundRecord({
-            inbound_no: inboundNo,
-            warehouse_id: currentWarehouse.id,
-            warehouse_name: currentWarehouse.name,
-            inventory_code: record.inventoryCode || '',
-            scan_model: record.model,
-            batch: record.batch || '',
-            quantity: record.quantity,
-            in_date: today,
-            notes: '',
-            rawContent: record.rawContent || '',
-            // 扩展字段
-            package: record.package || '',
-            version: record.version || '',
-            productionDate: record.productionDate || '',
-            traceNo: record.traceNo || '',
-            sourceNo: record.sourceNo || '',
-            // 自定义字段
-            customFields: record.customFields,
-          });
+      await addInboundRecordsBatch(recordsToSave);
 
-          successCount++;
-          console.log('[handleSaveInbound] 保存成功:', record.id);
-        } catch (error) {
-          failCount++;
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error('[handleSaveInbound] 保存失败:', {
-            id: record.id,
-            model: record.model,
-            error: errorMessage,
-          });
-          errors.push({ record, error: errorMessage });
-        }
-      }
+      showToast(`入库成功！共 ${scanRecords.length} 条`, 'success');
+      feedbackConfirm();
 
-      if (failCount > 0) {
-        console.error('[handleSaveInbound] 部分记录保存失败:', errors);
-        showToast(`⚠️ 部分失败: 成功${successCount}条, 失败${failCount}条\n${errors[0].error}`, 'warning');
-        feedbackWarning();
-      } else {
-        showToast(`入库成功！共 ${scanRecords.length} 条`, 'success');
-        feedbackConfirm();
+      // 更新入库汇总表（按型号+版本号+入库日期每日统计）
+      await updateInboundSummary(currentWarehouse.id);
 
-        // 更新入库汇总表（按型号+版本号+入库日期每日统计）
-        if (currentWarehouse) {
-          await updateInboundSummary(currentWarehouse.id);
-        }
+      // 刷新已保存入库记录
+      await loadSavedInboundRecords(currentWarehouse.id);
 
-        // 刷新已保存入库记录
-        await loadSavedInboundRecords(currentWarehouse.id);
-
-        // 全部成功才清空记录
-        setScanRecords([]);
-        setCurrentSupplier(null);
-        setExpandedGroups(new Set());
-        setConfirmedGroups(new Set());
-        await clearScanRecords();
-        await generateNo();
-      }
+      // 全部成功才清空记录
+      setScanRecords([]);
+      setCurrentSupplier(null);
+      setExpandedGroups(new Set());
+      setConfirmedGroups(new Set());
+      await clearScanRecords();
+      await generateNo();
     } catch (error) {
       console.error('[handleSaveInbound] 保存失败:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);

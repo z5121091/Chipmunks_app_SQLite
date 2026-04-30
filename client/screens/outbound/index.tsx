@@ -374,16 +374,13 @@ export default function PDAScanScreen() {
           warehouse = def || list[0] || null;
         }
 
-        // 7. 设置当前仓库并等待状态更新
+        // 7. 设置当前仓库
         setCurrentWarehouse(warehouse);
 
-        // 8. 等待状态更新完成（给 React 一帧的时间）
-        await new Promise(resolve => setTimeout(resolve, 0));
+        // 8. 加载扫码出库持久化状态（显式传入仓库，避免读取旧闭包）
+        await loadOutboundState(list, warehouse);
 
-        // 9. 加载扫码出库持久化状态（传入仓库列表，避免依赖状态）
-        await loadOutboundState(list);
-
-        // 10. 聚焦输入框
+        // 9. 聚焦输入框
         if (isActive) {
           focusScannerInput(100);
         }
@@ -411,7 +408,10 @@ export default function PDAScanScreen() {
   );
 
   // 加载扫码出库持久化状态（订单号、仓库、扫码记录）
-  const loadOutboundState = async (warehouseList?: Warehouse[]) => {
+  const loadOutboundState = async (
+    warehouseList?: Warehouse[],
+    explicitWarehouse?: Warehouse | null
+  ) => {
     try {
       // 1. 加载订单号
       const savedOrderNo = await AsyncStorage.getItem(STORAGE_KEYS.OUTBOUND_ORDER_NO);
@@ -437,11 +437,12 @@ export default function PDAScanScreen() {
         }
 
         // 4. 检查订单仓库是否与当前仓库匹配（仅在当前仓库已加载时检查）
-        if (currentWarehouse && order.warehouse_id !== currentWarehouse.id) {
+        const activeWarehouse = explicitWarehouse ?? currentWarehouse;
+        if (activeWarehouse && order.warehouse_id !== activeWarehouse.id) {
           console.log('[loadOutboundState] 订单仓库不匹配，清空订单号:', {
             savedOrderNo,
             orderWarehouseId: order.warehouse_id,
-            currentWarehouseId: currentWarehouse.id,
+            currentWarehouseId: activeWarehouse.id,
           });
           Alert.alert('提示', '订单属于其他仓库，订单号已清空');
           await AsyncStorage.removeItem(STORAGE_KEYS.OUTBOUND_ORDER_NO);
