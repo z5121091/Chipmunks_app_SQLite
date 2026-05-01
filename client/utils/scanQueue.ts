@@ -3,7 +3,7 @@
  * PDA 扫码稳定架构：扫码广播 → 解析条码 → 队列缓存 → SQLite批量写入 → UI刷新
  */
 
-import { MaterialRecord } from './database';
+import { generateId } from './database';
 
 // 队列项状态
 export enum QueueItemStatus {
@@ -64,7 +64,7 @@ class ScanQueue {
   // 添加到队列
   add(scanData: string, parsed: any): QueueItem {
     const item: QueueItem = {
-      id: `queue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `queue_${generateId()}`,
       scanData,
       parsed,
       status: QueueItemStatus.PENDING,
@@ -164,9 +164,12 @@ class ScanQueue {
   private cleanupSuccessItems() {
     const successItems = this.queue.filter(item => item.status === QueueItemStatus.SUCCESS);
     if (successItems.length > 50) {
-      const toRemove = successItems.slice(0, successItems.length - 50);
-      this.queue = this.queue.filter(item => !toRemove.includes(item));
-      console.log(`[ScanQueue] 清理成功项: ${toRemove.length}条`);
+      const removableCount = successItems.length - 50;
+      const removableIds = new Set(
+        successItems.slice(0, removableCount).map((item) => item.id)
+      );
+      this.queue = this.queue.filter(item => !removableIds.has(item.id));
+      console.log(`[ScanQueue] 清理成功项: ${removableCount}条`);
     }
   }
 

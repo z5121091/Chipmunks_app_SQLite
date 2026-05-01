@@ -141,28 +141,31 @@ export const syncExcelToComputer = async (
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), EXPORT_CONFIG.TIMEOUT);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      },
-      body,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body,
+        signal: controller.signal,
+      });
 
-    const result = await parseJsonResponse<{ success?: boolean; message?: string; path?: string }>(
-      response,
-      '服务器返回格式错误，请检查同步服务是否正常运行'
-    );
+      const result = await parseJsonResponse<{ success?: boolean; message?: string; path?: string }>(
+        response,
+        '服务器返回格式错误，请检查同步服务是否正常运行'
+      );
 
-    if (result.success) {
-      onSuccess?.(result.path || '');
-      return { success: true, path: result.path };
-    } else {
-      const msg = result.message || '未知错误';
-      onError?.(msg);
-      return { success: false, message: msg };
+      if (result.success) {
+        onSuccess?.(result.path || '');
+        return { success: true, path: result.path };
+      } else {
+        const msg = result.message || '未知错误';
+        onError?.(msg);
+        return { success: false, message: msg };
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   } catch (error: any) {
     const errorMsg =

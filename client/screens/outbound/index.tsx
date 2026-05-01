@@ -159,6 +159,8 @@ export default function PDAScanScreen() {
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postProcessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenActiveRef = useRef(true);
   const liveInputValueRef = useRef('');
   const pendingScanCodesRef = useRef<string[]>([]);
   const scannerFocusBlockedRef = useRef(false);
@@ -198,7 +200,7 @@ export default function PDAScanScreen() {
 
     focusTimerRef.current = setTimeout(() => {
       focusTimerRef.current = null;
-      if (!scannerFocusBlockedRef.current) {
+      if (screenActiveRef.current && !scannerFocusBlockedRef.current) {
         inputRef.current?.focus();
       }
     }, delay);
@@ -211,6 +213,9 @@ export default function PDAScanScreen() {
       }
       if (autoSubmitTimerRef.current) {
         clearTimeout(autoSubmitTimerRef.current);
+      }
+      if (postProcessTimerRef.current) {
+        clearTimeout(postProcessTimerRef.current);
       }
     },
     []
@@ -231,6 +236,7 @@ export default function PDAScanScreen() {
   // 页面聚焦时初始化和恢复数据
   useFocusEffect(
     useCallback(() => {
+      screenActiveRef.current = true;
       let isActive = true;
 
       const init = async () => {
@@ -414,8 +420,19 @@ export default function PDAScanScreen() {
 
       return () => {
         isActive = false;
+        screenActiveRef.current = false;
+        processingRef.current = false;
         if (autoSubmitTimerRef.current) {
           clearTimeout(autoSubmitTimerRef.current);
+          autoSubmitTimerRef.current = null;
+        }
+        if (focusTimerRef.current) {
+          clearTimeout(focusTimerRef.current);
+          focusTimerRef.current = null;
+        }
+        if (postProcessTimerRef.current) {
+          clearTimeout(postProcessTimerRef.current);
+          postProcessTimerRef.current = null;
         }
         // 等待 init 完成，清理订阅
         cleanupPromise
@@ -767,8 +784,15 @@ export default function PDAScanScreen() {
         feedbackError();
       } finally {
         // 给扫码枪留一个很短的输入窗口，避免上一条还在处理时下一条被吞掉。
-        setTimeout(() => {
+        if (postProcessTimerRef.current) {
+          clearTimeout(postProcessTimerRef.current);
+        }
+        postProcessTimerRef.current = setTimeout(() => {
+          postProcessTimerRef.current = null;
           processingRef.current = false;
+          if (!screenActiveRef.current) {
+            return;
+          }
 
           const nextPendingCode = pendingScanCodesRef.current.shift();
           if (nextPendingCode) {

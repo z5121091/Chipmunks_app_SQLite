@@ -77,7 +77,7 @@ const hasAllowedContentType = (contentTypeHeader?: string): boolean => {
   return allowedUploadContentTypes.has(contentType);
 };
 
-const hasValidXlsxSignature = (rawBody: Buffer): boolean => {
+const hasZipSignature = (rawBody: Buffer): boolean => {
   if (rawBody.length < 4) {
     return false;
   }
@@ -89,6 +89,22 @@ const hasValidXlsxSignature = (rawBody: Buffer): boolean => {
   ];
 
   return signatures.some((signature) => rawBody.subarray(0, 4).equals(signature));
+};
+
+const XLSX_REQUIRED_ENTRY_MARKERS = [
+  '[Content_Types].xml',
+  '_rels/.rels',
+  'xl/workbook.xml',
+];
+
+const hasValidXlsxSignature = (rawBody: Buffer): boolean => {
+  if (!hasZipSignature(rawBody)) {
+    return false;
+  }
+
+  return XLSX_REQUIRED_ENTRY_MARKERS.every((entryMarker) =>
+    rawBody.includes(Buffer.from(entryMarker, 'utf8'))
+  );
 };
 
 const handleExcelUpload =

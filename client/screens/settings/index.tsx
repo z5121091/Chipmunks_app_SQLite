@@ -908,7 +908,9 @@ export default function SettingsScreen() {
             } else {
               await MediaLibrary.addAssetsToAlbumAsync([asset], downloadAlbum.id, false);
             }
-          } catch (albumError) {}
+          } catch (albumError) {
+            console.warn('保存到媒体库失败，继续保留 Downloads 目录文件:', albumError);
+          }
 
           // 尝试打开 Downloads 文件夹
           try {

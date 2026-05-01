@@ -9,10 +9,10 @@ import { NETWORK_CONFIG, SyncConfig } from '@/constants/config';
 export const testConnection = async (config: SyncConfig): Promise<boolean> => {
   if (!config.ip) return false;
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), NETWORK_CONFIG.HEARTBEAT_TIMEOUT);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), NETWORK_CONFIG.HEARTBEAT_TIMEOUT);
 
+  try {
     const response = await fetch(
       `http://${config.ip}:${config.port || NETWORK_CONFIG.DEFAULT_PORT}/health`,
       {
@@ -21,9 +21,10 @@ export const testConnection = async (config: SyncConfig): Promise<boolean> => {
       }
     );
 
-    clearTimeout(timeoutId);
     return response.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };

@@ -209,6 +209,8 @@ export default function InventoryScreen() {
   const processingRef = useRef(false);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postProcessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenActiveRef = useRef(true);
   const scannerFocusBlockedRef = useRef(false);
   // 扫码队列 - 暂存处理中的新扫码
   const scanQueueRef = useRef<string[]>([]);
@@ -356,7 +358,7 @@ export default function InventoryScreen() {
 
     focusTimerRef.current = setTimeout(() => {
       focusTimerRef.current = null;
-      if (!scannerFocusBlockedRef.current) {
+      if (screenActiveRef.current && !scannerFocusBlockedRef.current) {
         inputRef.current?.focus();
       }
     }, delay);
@@ -366,6 +368,12 @@ export default function InventoryScreen() {
     () => () => {
       if (focusTimerRef.current) {
         clearTimeout(focusTimerRef.current);
+      }
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+      }
+      if (postProcessTimerRef.current) {
+        clearTimeout(postProcessTimerRef.current);
       }
     },
     []
@@ -449,6 +457,7 @@ export default function InventoryScreen() {
   // 页面聚焦时初始化和恢复数据
   useFocusEffect(
     useCallback(() => {
+      screenActiveRef.current = true;
       let isActive = true;
       const init = async () => {
         // 1. 加载仓库列表（数据库已在 APP 启动时初始化）
@@ -494,8 +503,18 @@ export default function InventoryScreen() {
 
       return () => {
         isActive = false;
+        screenActiveRef.current = false;
         if (autoSubmitTimerRef.current) {
           clearTimeout(autoSubmitTimerRef.current);
+          autoSubmitTimerRef.current = null;
+        }
+        if (focusTimerRef.current) {
+          clearTimeout(focusTimerRef.current);
+          focusTimerRef.current = null;
+        }
+        if (postProcessTimerRef.current) {
+          clearTimeout(postProcessTimerRef.current);
+          postProcessTimerRef.current = null;
         }
       };
     }, [focusScannerInput])
@@ -637,7 +656,14 @@ export default function InventoryScreen() {
         processingRef.current = false;
         // 处理完成后，检查队列是否有待处理的扫码
         // 注意：使用 setTimeout 让 React 有机会更新状态，避免重复检测失败
-        setTimeout(() => {
+        if (postProcessTimerRef.current) {
+          clearTimeout(postProcessTimerRef.current);
+        }
+        postProcessTimerRef.current = setTimeout(() => {
+          postProcessTimerRef.current = null;
+          if (!screenActiveRef.current) {
+            return;
+          }
           if (scanQueueRef.current.length > 0) {
             const nextCode = scanQueueRef.current.shift();
             if (nextCode) {
