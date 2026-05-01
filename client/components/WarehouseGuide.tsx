@@ -1,22 +1,7 @@
-/**
- * 仓库引导组件
- * 首次使用时引导用户选择仓库
- */
-
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Modal,
-  StyleSheet,
-  Dimensions,
-  SafeAreaView,
-} from 'react-native';
+import React from 'react';
+import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rf, rs } from '@/utils/responsive';
-import { STORAGE_KEYS } from '@/constants/config';
 
 interface GuideStep {
   title: string;
@@ -26,8 +11,9 @@ interface GuideStep {
 
 const STEPS: GuideStep[] = [
   {
-    title: '欢迎启用 Chipmunks 掌上仓库',
-    description: '先建立仓库档案，再开始入库、出库和盘点',
+    title: '\u6b22\u8fce\u4f7f\u7528 Chipmunks \u638c\u4e0a\u4ed3\u5e93',
+    description:
+      '\u8bf7\u5148\u521b\u5efa\u4ed3\u5e93\uff0c\u518d\u5f00\u59cb\u5165\u5e93\u3001\u51fa\u5e93\u548c\u76d8\u70b9\u4f5c\u4e1a\u3002',
     icon: 'package',
   },
 ];
@@ -39,28 +25,25 @@ interface WarehouseGuideProps {
 }
 
 export function WarehouseGuide({ visible, onSkip, onGoToSettings }: WarehouseGuideProps) {
-  const step = STEPS[0]; // 单步引导
+  const step = STEPS[0];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onSkip}>
       <View style={styles.overlay}>
         <SafeAreaView style={styles.container}>
           <View style={styles.content}>
-            {/* 图标 */}
             <View style={styles.iconContainer}>
               <Feather name={step.icon || 'package'} size={rs(64)} color="#4F46E5" />
             </View>
 
-            {/* 标题 */}
             <Text style={styles.title}>{step.title}</Text>
-
-            {/* 描述 */}
             <Text style={styles.description}>{step.description}</Text>
 
-            {/* 按钮组 */}
             <View style={styles.buttonContainer}>
               <TouchableOpacity style={styles.skipButton} onPress={onSkip} activeOpacity={0.7}>
-                <Text style={styles.skipButtonText}>跳过</Text>
+                <Text style={styles.skipButtonText}>
+                  {'\u7a0d\u540e\u518d\u8bf4'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -68,7 +51,9 @@ export function WarehouseGuide({ visible, onSkip, onGoToSettings }: WarehouseGui
                 onPress={onGoToSettings}
                 activeOpacity={0.7}
               >
-                <Text style={styles.nextButtonText}>去建仓库</Text>
+                <Text style={styles.nextButtonText}>
+                  {'\u53bb\u5efa\u4ed3\u5e93'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -78,38 +63,17 @@ export function WarehouseGuide({ visible, onSkip, onGoToSettings }: WarehouseGui
   );
 }
 
-/**
- * 检查并标记仓库引导是否已显示
- * @param options.hasBusinessData 是否已有业务数据（订单/物料）
- * @param options.hasWarehouseConfig 是否已有仓库配置
- * @returns 是否需要显示引导
- */
 export async function shouldShowWarehouseGuide(options: {
   hasBusinessData: boolean;
   hasWarehouseConfig: boolean;
 }): Promise<boolean> {
-  // 如果已有业务数据或已有仓库配置，不显示引导
-  if (options.hasBusinessData || options.hasWarehouseConfig) {
-    return false;
-  }
-
-  // 检查引导是否已显示
-  const guideShown = await AsyncStorage.getItem(STORAGE_KEYS.WAREHOUSE_GUIDE_SHOWN);
-  return guideShown !== 'true';
+  return !options.hasBusinessData && !options.hasWarehouseConfig;
 }
 
-/**
- * 标记仓库引导已显示
- */
 export async function markWarehouseGuideShown(): Promise<void> {
-  try {
-    await AsyncStorage.setItem(STORAGE_KEYS.WAREHOUSE_GUIDE_SHOWN, 'true');
-  } catch (error) {
-    console.error('标记仓库引导失败:', error);
-  }
+  return;
 }
 
-// 样式
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,

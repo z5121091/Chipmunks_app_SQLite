@@ -14,7 +14,7 @@ import { useSafeRouter } from '@/hooks/useSafeRouter';
 import { getAllMaterials, getAllWarehouses, initDatabase } from '@/utils/database';
 import { ModuleColors } from '@/constants/theme';
 import { Str } from '@/resources/strings';
-import { WarehouseGuide, shouldShowWarehouseGuide, markWarehouseGuideShown } from '@/components/WarehouseGuide';
+import { WarehouseGuide, shouldShowWarehouseGuide } from '@/components/WarehouseGuide';
 
 interface Module {
   id: string;
@@ -115,15 +115,15 @@ export default function HomeScreen() {
           hasWarehouseConfig: warehouses.length > 0,
         });
 
-        if (!cancelled && needsGuide) {
-          setShowWarehouseGuide(true);
+        if (!cancelled) {
+          setShowWarehouseGuide(needsGuide);
         }
       } catch (error) {
         console.error('[首页] 检查仓库引导失败:', error);
       }
     };
 
-    checkWarehouseGuide();
+    void checkWarehouseGuide();
 
     return () => {
       cancelled = true;
@@ -262,11 +262,9 @@ export default function HomeScreen() {
         visible={showWarehouseGuide}
         onSkip={() => {
           setShowWarehouseGuide(false);
-          markWarehouseGuideShown();
         }}
         onGoToSettings={() => {
           setShowWarehouseGuide(false);
-          markWarehouseGuideShown();
           router.push('/warehouse-management');
         }}
       />
