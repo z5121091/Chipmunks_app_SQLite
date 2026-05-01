@@ -37,7 +37,14 @@ import {
 import { isQRCode } from '@/utils/qrcodeParser';
 import { parseQuantity } from '@/utils/quantity';
 import { Spacing } from '@/constants/theme';
-import { feedbackSuccess, feedbackError, feedbackWarning, feedbackDuplicate, feedbackConfirm, useFeedbackCleanup } from '@/utils/feedback';
+import {
+  feedbackSuccess,
+  feedbackError,
+  feedbackWarning,
+  feedbackDuplicate,
+  feedbackConfirm,
+  useFeedbackCleanup,
+} from '@/utils/feedback';
 import { useToast } from '@/utils/toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJsonParseNullable } from '@/utils/json';
@@ -78,92 +85,114 @@ interface SavedInventorySummary {
 // ========================================
 // React.memo 优化：列表项组件
 // ========================================
-const RecordItem = React.memo(({ item, isExpanded, onToggle, onDeleteGroup, onDeleteRecord, onEditQuantity, checkType, theme, styles }: {
-  item: any;
-  isExpanded: boolean;
-  onToggle: (key: string) => void;
-  onDeleteGroup: (item: any) => void;
-  onDeleteRecord: (record: any) => void;
-  onEditQuantity?: (record: any) => void;
-  checkType: CheckType;
-  theme: any;
-  styles: any;
-}) => {
-  const key = `${item.model}|${item.version}`;
+const RecordItem = React.memo(
+  ({
+    item,
+    isExpanded,
+    onToggle,
+    onDeleteGroup,
+    onDeleteRecord,
+    onEditQuantity,
+    checkType,
+    theme,
+    styles,
+  }: {
+    item: any;
+    isExpanded: boolean;
+    onToggle: (key: string) => void;
+    onDeleteGroup: (item: any) => void;
+    onDeleteRecord: (record: any) => void;
+    onEditQuantity?: (record: any) => void;
+    checkType: CheckType;
+    theme: any;
+    styles: any;
+  }) => {
+    const key = `${item.model}|${item.version}`;
 
-  return (
-    <View key={key} style={styles.itemContainer}>
-      {/* 聚合项（两行布局） */}
-      <TouchableOpacity style={styles.itemRow}
-        activeOpacity={0.7} onPress={() => onToggle(key)}
-        onLongPress={() => onDeleteGroup(item)}
-      >
-        <View style={styles.itemLeft}>
-          <TouchableOpacity style={styles.itemModelRow}
-            activeOpacity={0.7} onPress={() => onToggle(key)}
-          >
-            <Text style={styles.itemModel}>
-              {isExpanded ? '▼' : '▶'} {item.model}
-            </Text>
-          </TouchableOpacity>
-          <Text style={styles.itemBatch}>
-            版本: {item.version || '-'}
-          </Text>
-        </View>
-        <View style={styles.itemRight}>
-          {checkType === 'partial' ? (
-            <>
-              <View style={styles.quantityRow}>
-                <Text style={styles.itemQtyLabel}>标签:</Text>
-                <Text style={styles.itemQty}>{item.totalQuantity.toLocaleString()}</Text>
-              </View>
-              <TouchableOpacity style={styles.actualRow}
-                activeOpacity={0.7} onPress={() => onEditQuantity && onEditQuantity(item.records[0])}
-              >
-                <Text style={styles.actualLabel}>实际:</Text>
-                <Text style={styles.actualQty}>{item.actualTotalQuantity.toLocaleString()}</Text>
-                <Feather name="edit-3" size={12} color={theme.accent} style={{ marginLeft: Spacing.xs }} />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <Text style={styles.itemQty}>
-              {item.totalQuantity.toLocaleString()}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
-
-      {/* 展开的明细 */}
-      {isExpanded && (
-        <View style={styles.detailsContainer}>
-          {item.records.map((record: any) => (
+    return (
+      <View key={key} style={styles.itemContainer}>
+        {/* 聚合项（两行布局） */}
+        <TouchableOpacity
+          style={styles.itemRow}
+          activeOpacity={0.7}
+          onPress={() => onToggle(key)}
+          onLongPress={() => onDeleteGroup(item)}
+        >
+          <View style={styles.itemLeft}>
             <TouchableOpacity
-              key={record.id}
-              style={styles.detailItem}
-              onLongPress={() => onDeleteRecord(record)}
-              delayLongPress={500}
+              style={styles.itemModelRow}
+              activeOpacity={0.7}
+              onPress={() => onToggle(key)}
             >
-              <Text style={styles.detailText}>
-                批次: {record.batch || '-'}{record.productionDate ? `  |  生产日期: ${record.productionDate}` : ''}  |  数量: {record.quantity} PCS
+              <Text style={styles.itemModel}>
+                {isExpanded ? '▼' : '▶'} {item.model}
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}, (prevProps, nextProps) => {
-  // 自定义比较函数：只有关键属性变化时才重新渲染
-  return (
-    prevProps.item.model === nextProps.item.model &&
-    prevProps.item.version === nextProps.item.version &&
-    prevProps.item.totalQuantity === nextProps.item.totalQuantity &&
-    prevProps.item.count === nextProps.item.count &&
-    prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.checkType === nextProps.checkType &&
-    prevProps.item.records.length === nextProps.item.records.length
-  );
-});
+            <Text style={styles.itemBatch}>版本: {item.version || '-'}</Text>
+          </View>
+          <View style={styles.itemRight}>
+            {checkType === 'partial' ? (
+              <>
+                <View style={styles.quantityRow}>
+                  <Text style={styles.itemQtyLabel}>标签:</Text>
+                  <Text style={styles.itemQty}>{item.totalQuantity.toLocaleString()}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.actualRow}
+                  activeOpacity={0.7}
+                  onPress={() => onEditQuantity && onEditQuantity(item.records[0])}
+                >
+                  <Text style={styles.actualLabel}>实际:</Text>
+                  <Text style={styles.actualQty}>{item.actualTotalQuantity.toLocaleString()}</Text>
+                  <Feather
+                    name="edit-3"
+                    size={12}
+                    color={theme.accent}
+                    style={{ marginLeft: Spacing.xs }}
+                  />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.itemQty}>{item.totalQuantity.toLocaleString()}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {/* 展开的明细 */}
+        {isExpanded && (
+          <View style={styles.detailsContainer}>
+            {item.records.map((record: any) => (
+              <TouchableOpacity
+                key={record.id}
+                style={styles.detailItem}
+                onLongPress={() => onDeleteRecord(record)}
+                delayLongPress={500}
+              >
+                <Text style={styles.detailText}>
+                  批次: {record.batch || '-'}
+                  {record.productionDate ? `  |  生产日期: ${record.productionDate}` : ''} | 数量:{' '}
+                  {record.quantity} PCS
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 自定义比较函数：只有关键属性变化时才重新渲染
+    return (
+      prevProps.item.model === nextProps.item.model &&
+      prevProps.item.version === nextProps.item.version &&
+      prevProps.item.totalQuantity === nextProps.item.totalQuantity &&
+      prevProps.item.count === nextProps.item.count &&
+      prevProps.isExpanded === nextProps.isExpanded &&
+      prevProps.checkType === nextProps.checkType &&
+      prevProps.item.records.length === nextProps.item.records.length
+    );
+  }
+);
 
 export default function InventoryScreen() {
   const { theme, isDark } = useTheme();
@@ -254,7 +283,11 @@ export default function InventoryScreen() {
   };
 
   // 保存扫描记录
-  const saveCheckRecords = async (records: ScanRecord[], type: CheckType, warehouse?: Warehouse | null) => {
+  const saveCheckRecords = async (
+    records: ScanRecord[],
+    type: CheckType,
+    warehouse?: Warehouse | null
+  ) => {
     try {
       await AsyncStorage.setItem(INVENTORY_CHECK_RECORDS_KEY, JSON.stringify(records));
       await AsyncStorage.setItem(INVENTORY_CHECK_TYPE_KEY, type);
@@ -282,12 +315,23 @@ export default function InventoryScreen() {
   const [editingRecord, setEditingRecord] = useState<ScanRecord | null>(null);
   const [quantityInput, setQuantityInput] = useState('');
   const quantityInputRef = useRef<TextInput>(null);
-  
+  const quantityFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 数量弹窗打开时聚焦输入框
   useEffect(() => {
     if (quantityModalVisible && quantityInputRef.current) {
-      setTimeout(() => quantityInputRef.current?.focus(), 300);
+      quantityFocusTimerRef.current = setTimeout(() => {
+        quantityInputRef.current?.focus();
+        quantityFocusTimerRef.current = null;
+      }, 300);
     }
+
+    return () => {
+      if (quantityFocusTimerRef.current) {
+        clearTimeout(quantityFocusTimerRef.current);
+        quantityFocusTimerRef.current = null;
+      }
+    };
   }, [quantityModalVisible]);
 
   // 已保存盘点记录
@@ -301,12 +345,8 @@ export default function InventoryScreen() {
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
-    scannerFocusBlockedRef.current = (
-      showWarehousePicker ||
-      quantityModalVisible ||
-      savedModalVisible ||
-      saving
-    );
+    scannerFocusBlockedRef.current =
+      showWarehousePicker || quantityModalVisible || savedModalVisible || saving;
   }, [quantityModalVisible, savedModalVisible, saving, showWarehousePicker]);
 
   const focusScannerInput = useCallback((delay = 80) => {
@@ -322,11 +362,14 @@ export default function InventoryScreen() {
     }, delay);
   }, []);
 
-  useEffect(() => () => {
-    if (focusTimerRef.current) {
-      clearTimeout(focusTimerRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!showWarehousePicker && !quantityModalVisible && !savedModalVisible && !saving) {
@@ -339,7 +382,7 @@ export default function InventoryScreen() {
 
   // 切换展开/折叠
   const toggleExpand = useCallback((key: string) => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
@@ -358,45 +401,47 @@ export default function InventoryScreen() {
   }, [scanRecords, checkType, currentWarehouse]);
 
   // 删除聚合组（所有同型号+版本号的记录）
-  const handleDeleteGroup = useCallback((item: any) => {
-    Alert.alert(
-      '确认删除',
-      `确定要删除 ${item.model} V${item.version || '-'} 的所有 ${item.count} 条记录吗？`,
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: () => {
-            const recordIds = item.records.map((r: ScanRecord) => r.id);
-            const updated = scanRecords.filter(r => !recordIds.includes(r.id));
-            setScanRecords(updated);
-            showToast(`已删除 ${item.count} 条记录`, 'success');
+  const handleDeleteGroup = useCallback(
+    (item: any) => {
+      Alert.alert(
+        '确认删除',
+        `确定要删除 ${item.model} V${item.version || '-'} 的所有 ${item.count} 条记录吗？`,
+        [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '删除',
+            style: 'destructive',
+            onPress: () => {
+              const recordIds = item.records.map((r: ScanRecord) => r.id);
+              const updated = scanRecords.filter((r) => !recordIds.includes(r.id));
+              setScanRecords(updated);
+              showToast(`已删除 ${item.count} 条记录`, 'success');
+            },
           },
-        },
-      ]
-    );
-  }, [scanRecords]);
+        ]
+      );
+    },
+    [scanRecords]
+  );
 
   // 删除单条记录
-  const handleDeleteRecord = useCallback((record: ScanRecord) => {
-    Alert.alert(
-      '确认删除',
-      `确定要删除这条记录吗？`,
-      [
+  const handleDeleteRecord = useCallback(
+    (record: ScanRecord) => {
+      Alert.alert('确认删除', `确定要删除这条记录吗？`, [
         { text: '取消', style: 'cancel' },
         {
           text: '删除',
           style: 'destructive',
           onPress: () => {
-            const updated = scanRecords.filter(r => r.id !== record.id);
+            const updated = scanRecords.filter((r) => r.id !== record.id);
             setScanRecords(updated);
             showToast('已删除记录', 'success');
           },
         },
-      ]
-    );
-  }, [scanRecords]);
+      ]);
+    },
+    [scanRecords]
+  );
 
   // 自动清理震动和提示音
   useFeedbackCleanup();
@@ -414,9 +459,12 @@ export default function InventoryScreen() {
         let warehouse: Warehouse | null = null;
         const savedWarehouse = await AsyncStorage.getItem(GLOBAL_WAREHOUSE_KEY);
         if (savedWarehouse) {
-          const saved = safeJsonParseNullable<Warehouse>(savedWarehouse, 'inventory.globalWarehouse');
+          const saved = safeJsonParseNullable<Warehouse>(
+            savedWarehouse,
+            'inventory.globalWarehouse'
+          );
           // 确保仓库仍然存在
-          if (saved && list.find(w => w.id === saved.id)) {
+          if (saved && list.find((w) => w.id === saved.id)) {
             warehouse = saved;
           }
         }
@@ -460,11 +508,11 @@ export default function InventoryScreen() {
     if (scanRecords.length > 0) {
       await saveCheckRecords(scanRecords, checkType, currentWarehouse);
     }
-    
+
     // 切换仓库
     setCurrentWarehouse(warehouse);
     await AsyncStorage.setItem(GLOBAL_WAREHOUSE_KEY, JSON.stringify(warehouse));
-    
+
     // 先重置界面状态，再恢复新仓库自己的暂存
     setScanRecords([]);
     setExpandedGroups(new Set());
@@ -482,137 +530,140 @@ export default function InventoryScreen() {
   };
 
   // 处理扫描（带参数版本）
-  const processScan = useCallback(async (code: string) => {
-    if (!code || processingRef.current) return;
+  const processScan = useCallback(
+    async (code: string) => {
+      if (!code || processingRef.current) return;
 
-    if (!currentWarehouse) {
-      const errorDetail = getErrorDetail('ERR_NO_WAREHOUSE', undefined, router);
-      showToast(errorDetail.title, 'error');
-      if (errorDetail.action && errorDetail.onPress) {
-        setTimeout(() => errorDetail.onPress!(), 500);
-      }
-      feedbackError();
-      return;
-    }
-
-    processingRef.current = true;
-
-    try {
-      // 解析二维码
-      const rule = await detectRule(code);
-      if (!rule) {
-        const errorDetail = getErrorDetail('ERR_QR_FORMAT', { code }, router);
+      if (!currentWarehouse) {
+        const errorDetail = getErrorDetail('ERR_NO_WAREHOUSE', undefined, router);
         showToast(errorDetail.title, 'error');
-        console.error('[盘点] 无法识别二维码格式:', code);
-        feedbackError();
-        return;
-      }
-
-      const { standardFields, customFields } = parseWithRule(code, rule);
-      const model = standardFields.model || '';
-      const batch = standardFields.batch || '';
-      const quantity = parseQuantity(standardFields.quantity, { min: 1 });
-      const version = standardFields.version || '';
-
-
-      if (!model) {
-        showToast('无法识别型号信息', 'error');
-        feedbackError();
-        console.error('[盘点] 无法识别型号信息');
-        return;
-      }
-
-      if (quantity === null) {
-        showToast('数量字段无效，必须为大于 0 的整数', 'error');
-        feedbackError();
-        console.error('[盘点] 数量字段无效:', { code, quantity: standardFields.quantity, model });
-        return;
-      }
-
-      // 查找存货编码
-      const inventoryCode = await getInventoryCodeByModel(model);
-
-      // 检查重复（只检测追溯码，因为箱号可能重复）
-      let isDuplicate = false;
-
-      // 根据追溯码字段判断（已保存的记录）
-      if (standardFields.traceNo) {
-        const existingByTraceNo = scanRecords.find(r => r.traceNo === standardFields.traceNo);
-        if (existingByTraceNo) {
-          isDuplicate = true;
+        if (errorDetail.action && errorDetail.onPress) {
+          setTimeout(() => errorDetail.onPress!(), 500);
         }
-      }
-
-      if (isDuplicate) {
-        showToast('⚠️ 该物料已扫码，请勿重复', 'warning');
-        feedbackDuplicate();
+        feedbackError();
         return;
       }
 
-      // 新增记录
-      const newRecord: ScanRecord = {
-        id: generateId(),
-        traceCode: code, // 追溯码
-        model,
-        batch,
-        quantity,
-        actualQuantity: checkType === 'partial' ? quantity : undefined,
-        inventoryCode: inventoryCode || undefined,
-        scanTime: formatDateTime(new Date().toISOString()),
-        // 扩展字段
-        package: standardFields.package || undefined,
-        version: version || undefined,
-        productionDate: standardFields.productionDate || undefined,
-        traceNo: standardFields.traceNo || undefined,
-        sourceNo: standardFields.sourceNo || undefined,
-        // 自定义字段
-        customFields: customFields || {},
-      };
+      processingRef.current = true;
 
-      // 计算该型号+版本的累计数量（包含新记录）
-      const sameModelVersionRecords = scanRecords.filter(
-        r => r.model === model && r.version === version
-      );
-      const totalCount = sameModelVersionRecords.length + 1;
-      const totalQty = sameModelVersionRecords.reduce((sum, r) => sum + r.quantity, 0) + quantity;
+      try {
+        // 解析二维码
+        const rule = await detectRule(code);
+        if (!rule) {
+          const errorDetail = getErrorDetail('ERR_QR_FORMAT', { code }, router);
+          showToast(errorDetail.title, 'error');
+          console.error('[盘点] 无法识别二维码格式:', code);
+          feedbackError();
+          return;
+        }
 
-      setScanRecords(prev => [newRecord, ...prev]);
+        const { standardFields, customFields } = parseWithRule(code, rule);
+        const model = standardFields.model || '';
+        const batch = standardFields.batch || '';
+        const quantity = parseQuantity(standardFields.quantity, { min: 1 });
+        const version = standardFields.version || '';
 
-      showToast(`${model}`, 'success');
-      feedbackSuccess();
-    } catch (e) {
-      console.error('[盘点] 处理失败:', e);
-      console.error(e);
-      showToast('处理失败', 'error');
-      feedbackError();
-    } finally {
-      processingRef.current = false;
-      // 处理完成后，检查队列是否有待处理的扫码
-      // 注意：使用 setTimeout 让 React 有机会更新状态，避免重复检测失败
-      setTimeout(() => {
-        if (scanQueueRef.current.length > 0) {
-          const nextCode = scanQueueRef.current.shift();
-          if (nextCode) {
-            processScan(nextCode);
+        if (!model) {
+          showToast('无法识别型号信息', 'error');
+          feedbackError();
+          console.error('[盘点] 无法识别型号信息');
+          return;
+        }
+
+        if (quantity === null) {
+          showToast('数量字段无效，必须为大于 0 的整数', 'error');
+          feedbackError();
+          console.error('[盘点] 数量字段无效:', { code, quantity: standardFields.quantity, model });
+          return;
+        }
+
+        // 查找存货编码
+        const inventoryCode = await getInventoryCodeByModel(model);
+
+        // 检查重复（只检测追溯码，因为箱号可能重复）
+        let isDuplicate = false;
+
+        // 根据追溯码字段判断（已保存的记录）
+        if (standardFields.traceNo) {
+          const existingByTraceNo = scanRecords.find((r) => r.traceNo === standardFields.traceNo);
+          if (existingByTraceNo) {
+            isDuplicate = true;
           }
-        } else {
-          // 队列空了，重新聚焦输入框
-          focusScannerInput(0);
         }
-      }, 0);
-    }
-  }, [checkType, currentWarehouse, focusScannerInput, scanRecords]);
+
+        if (isDuplicate) {
+          showToast('⚠️ 该物料已扫码，请勿重复', 'warning');
+          feedbackDuplicate();
+          return;
+        }
+
+        // 新增记录
+        const newRecord: ScanRecord = {
+          id: generateId(),
+          traceCode: code, // 追溯码
+          model,
+          batch,
+          quantity,
+          actualQuantity: checkType === 'partial' ? quantity : undefined,
+          inventoryCode: inventoryCode || undefined,
+          scanTime: formatDateTime(new Date().toISOString()),
+          // 扩展字段
+          package: standardFields.package || undefined,
+          version: version || undefined,
+          productionDate: standardFields.productionDate || undefined,
+          traceNo: standardFields.traceNo || undefined,
+          sourceNo: standardFields.sourceNo || undefined,
+          // 自定义字段
+          customFields: customFields || {},
+        };
+
+        // 计算该型号+版本的累计数量（包含新记录）
+        const sameModelVersionRecords = scanRecords.filter(
+          (r) => r.model === model && r.version === version
+        );
+        const totalCount = sameModelVersionRecords.length + 1;
+        const totalQty = sameModelVersionRecords.reduce((sum, r) => sum + r.quantity, 0) + quantity;
+
+        setScanRecords((prev) => [newRecord, ...prev]);
+
+        showToast(`${model}`, 'success');
+        feedbackSuccess();
+      } catch (e) {
+        console.error('[盘点] 处理失败:', e);
+        console.error(e);
+        showToast('处理失败', 'error');
+        feedbackError();
+      } finally {
+        processingRef.current = false;
+        // 处理完成后，检查队列是否有待处理的扫码
+        // 注意：使用 setTimeout 让 React 有机会更新状态，避免重复检测失败
+        setTimeout(() => {
+          if (scanQueueRef.current.length > 0) {
+            const nextCode = scanQueueRef.current.shift();
+            if (nextCode) {
+              processScan(nextCode);
+            }
+          } else {
+            // 队列空了，重新聚焦输入框
+            focusScannerInput(0);
+          }
+        }, 0);
+      }
+    },
+    [checkType, currentWarehouse, focusScannerInput, scanRecords]
+  );
 
   // 处理扫描（入口函数，清理换行符后调用）
   // 修复：防止 onChangeText 和 onSubmitEditing 重复触发
   const handleScan = useCallback(async () => {
     // 如果正在处理中，直接返回
     if (processingRef.current) return;
-    
+
     // PDA扫码可能带有多余的字符，需要全面清理
-    let code = inputValue.trim()
-      .replace(/[\r\n\t\s]+/g, '')  // 清理所有空白字符（换行、回车、制表符、空格）
-      .replace(/^[^A-Za-z0-9]+/, '')  // 清理开头非字母数字字符
+    let code = inputValue
+      .trim()
+      .replace(/[\r\n\t\s]+/g, '') // 清理所有空白字符（换行、回车、制表符、空格）
+      .replace(/^[^A-Za-z0-9]+/, '') // 清理开头非字母数字字符
       .replace(/[^A-Za-z0-9]+$/, ''); // 清理结尾非字母数字字符
 
     // 如果没有有效内容，不处理
@@ -620,51 +671,53 @@ export default function InventoryScreen() {
       return;
     }
 
-    
     setInputValue(''); // 清空输入框
     await processScan(code);
     // 注意：processScan 的 finally 块会处理重新聚焦
   }, [inputValue, processScan]);
 
   // 输入变化时自动检测并触发（扫码器逐字符输入，需要防抖检测完成）
-  const handleInputChange = useCallback((text: string) => {
-    // 清除之前的定时器（每次输入都重置）
-    if (autoSubmitTimerRef.current) {
-      clearTimeout(autoSubmitTimerRef.current);
-      autoSubmitTimerRef.current = null;
-    }
-
-    // 如果正在处理中，先缓存当前输入
-    if (processingRef.current) {
-      // 暂存到队列
-      if (text.trim()) {
-        scanQueueRef.current.push(text.trim());
+  const handleInputChange = useCallback(
+    (text: string) => {
+      // 清除之前的定时器（每次输入都重置）
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = null;
       }
-      return;
-    }
 
-    // 如果当前有输入内容，启动定时器检测扫码完成
-    if (text.length > 0) {
-      autoSubmitTimerRef.current = setTimeout(() => {
-        const code = text.trim();
-        // 检测到输入完成（输入停止超过阈值，认为扫码完成）
-        if (code.length >= 1) {
-          // 一维码过滤：不含分隔符的扫码静默忽略
-          if (!isQRCode(code)) {
-            setInputValue(''); // 清空输入框
-            focusScannerInput(0);
-            return;
-          }
-          setInputValue(''); // 清空输入框
-          processScan(code);
+      // 如果正在处理中，先缓存当前输入
+      if (processingRef.current) {
+        // 暂存到队列
+        if (text.trim()) {
+          scanQueueRef.current.push(text.trim());
         }
-      }, 150); // 150ms 防抖，等待扫码器输入完成
-      return;
-    }
+        return;
+      }
 
-    // 输入框被清空时，更新状态
-    setInputValue(text);
-  }, [focusScannerInput, processScan]);
+      // 如果当前有输入内容，启动定时器检测扫码完成
+      if (text.length > 0) {
+        autoSubmitTimerRef.current = setTimeout(() => {
+          const code = text.trim();
+          // 检测到输入完成（输入停止超过阈值，认为扫码完成）
+          if (code.length >= 1) {
+            // 一维码过滤：不含分隔符的扫码静默忽略
+            if (!isQRCode(code)) {
+              setInputValue(''); // 清空输入框
+              focusScannerInput(0);
+              return;
+            }
+            setInputValue(''); // 清空输入框
+            processScan(code);
+          }
+        }, 150); // 150ms 防抖，等待扫码器输入完成
+        return;
+      }
+
+      // 输入框被清空时，更新状态
+      setInputValue(text);
+    },
+    [focusScannerInput, processScan]
+  );
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
@@ -722,8 +775,8 @@ export default function InventoryScreen() {
       return;
     }
 
-    setScanRecords(prev =>
-      prev.map(r => r.id === editingRecord.id ? { ...r, actualQuantity: qty } : r)
+    setScanRecords((prev) =>
+      prev.map((r) => (r.id === editingRecord.id ? { ...r, actualQuantity: qty } : r))
     );
     setQuantityModalVisible(false);
     setEditingRecord(null);
@@ -753,7 +806,7 @@ export default function InventoryScreen() {
       const today = formatDate(new Date().toISOString());
       console.log('[库存盘点] 盘点单号:', checkNo);
 
-      const recordsToSave = scanRecords.map(record => ({
+      const recordsToSave = scanRecords.map((record) => ({
         check_no: checkNo,
         warehouse_id: currentWarehouse.id,
         warehouse_name: currentWarehouse.name,
@@ -804,7 +857,7 @@ export default function InventoryScreen() {
   // 按型号+版本号分组显示（用于列表渲染）
   const groupedRecords = useMemo(() => {
     const groups: { [key: string]: ScanRecord[] } = {};
-    scanRecords.forEach(r => {
+    scanRecords.forEach((r) => {
       const key = `${r.model}|${r.version || ''}`;
       if (!groups[key]) {
         groups[key] = [];
@@ -817,7 +870,7 @@ export default function InventoryScreen() {
   // 计算每个型号+版本的累计数量
   const modelVersionTotals = useMemo(() => {
     const totals: { [key: string]: { qty: number; actualQty: number; count: number } } = {};
-    scanRecords.forEach(r => {
+    scanRecords.forEach((r) => {
       const key = `${r.model}|${r.version || ''}`;
       if (!totals[key]) {
         totals[key] = { qty: 0, actualQty: 0, count: 0 };
@@ -838,9 +891,12 @@ export default function InventoryScreen() {
 
   // 聚合显示数据（按型号+版本号聚合）
   const aggregatedRecords = useMemo(() => {
-    const map = new Map<string, { records: ScanRecord[], totalQuantity: number, actualTotalQuantity: number }>();
-    
-    scanRecords.forEach(record => {
+    const map = new Map<
+      string,
+      { records: ScanRecord[]; totalQuantity: number; actualTotalQuantity: number }
+    >();
+
+    scanRecords.forEach((record) => {
       const key = `${record.model}|${record.version || ''}`;
       if (!map.has(key)) {
         map.set(key, { records: [], totalQuantity: 0, actualTotalQuantity: 0 });
@@ -848,9 +904,10 @@ export default function InventoryScreen() {
       const group = map.get(key)!;
       group.records.push(record);
       group.totalQuantity += record.quantity;
-      group.actualTotalQuantity += record.actualQuantity !== undefined ? record.actualQuantity : record.quantity;
+      group.actualTotalQuantity +=
+        record.actualQuantity !== undefined ? record.actualQuantity : record.quantity;
     });
-    
+
     return Array.from(map.entries()).map(([key, group]) => {
       const [model, version] = key.split('|');
       return {
@@ -867,7 +924,7 @@ export default function InventoryScreen() {
   // 按型号分组的统计（用于已保存记录Modal）
   const savedGroupByModel = useMemo(() => {
     const groups: { [model: string]: { totalQty: number; lastDate: string; count: number } } = {};
-    savedRecords.forEach(r => {
+    savedRecords.forEach((r) => {
       if (!groups[r.scan_model]) {
         groups[r.scan_model] = { totalQty: 0, lastDate: r.check_date, count: 0 };
       }
@@ -881,50 +938,69 @@ export default function InventoryScreen() {
     return groups;
   }, [savedRecords]);
 
-  const savedInventorySummary = useMemo<SavedInventorySummary[]>(() => (
-    Object.entries(savedGroupByModel).map(([model, data]) => ({
-      model,
-      totalQty: data.totalQty,
-      lastDate: data.lastDate,
-      count: data.count,
-    }))
-  ), [savedGroupByModel]);
+  const savedInventorySummary = useMemo<SavedInventorySummary[]>(
+    () =>
+      Object.entries(savedGroupByModel).map(([model, data]) => ({
+        model,
+        totalQty: data.totalQty,
+        lastDate: data.lastDate,
+        count: data.count,
+      })),
+    [savedGroupByModel]
+  );
 
   const inventoryListState = useMemo(
     () => `${[...expandedGroups].join('|')}::${checkType}`,
     [checkType, expandedGroups]
   );
 
-  const renderAggregatedRecord = useCallback(({ item }: { item: any }) => {
-    const key = `${item.model}|${item.version}`;
-    const isExpanded = expandedGroups.has(key);
+  const renderAggregatedRecord = useCallback(
+    ({ item }: { item: any }) => {
+      const key = `${item.model}|${item.version}`;
+      const isExpanded = expandedGroups.has(key);
 
-    return (
-      <RecordItem
-        item={item}
-        isExpanded={isExpanded}
-        onToggle={toggleExpand}
-        onDeleteGroup={handleDeleteGroup}
-        onDeleteRecord={handleDeleteRecord}
-        onEditQuantity={openQuantityModal}
-        checkType={checkType}
-        theme={theme}
-        styles={styles}
-      />
-    );
-  }, [checkType, expandedGroups, handleDeleteGroup, handleDeleteRecord, openQuantityModal, styles, theme, toggleExpand]);
+      return (
+        <RecordItem
+          item={item}
+          isExpanded={isExpanded}
+          onToggle={toggleExpand}
+          onDeleteGroup={handleDeleteGroup}
+          onDeleteRecord={handleDeleteRecord}
+          onEditQuantity={openQuantityModal}
+          checkType={checkType}
+          theme={theme}
+          styles={styles}
+        />
+      );
+    },
+    [
+      checkType,
+      expandedGroups,
+      handleDeleteGroup,
+      handleDeleteRecord,
+      openQuantityModal,
+      styles,
+      theme,
+      toggleExpand,
+    ]
+  );
 
-  const renderSavedInventoryItem = useCallback(({ item }: { item: SavedInventorySummary }) => (
-    <View style={styles.savedItem}>
-      <View style={styles.savedItemLeft}>
-        <Text style={styles.savedModel} numberOfLines={1}>{item.model}</Text>
-        <Text style={styles.savedDate}>{item.lastDate}</Text>
+  const renderSavedInventoryItem = useCallback(
+    ({ item }: { item: SavedInventorySummary }) => (
+      <View style={styles.savedItem}>
+        <View style={styles.savedItemLeft}>
+          <Text style={styles.savedModel} numberOfLines={1}>
+            {item.model}
+          </Text>
+          <Text style={styles.savedDate}>{item.lastDate}</Text>
+        </View>
+        <View style={styles.savedItemRight}>
+          <Text style={styles.savedQty}>{item.totalQty} PCS</Text>
+        </View>
       </View>
-      <View style={styles.savedItemRight}>
-        <Text style={styles.savedQty}>{item.totalQty} PCS</Text>
-      </View>
-    </View>
-  ), [styles]);
+    ),
+    [styles]
+  );
 
   const savedInventoryKeyExtractor = useCallback((item: SavedInventorySummary) => item.model, []);
 
@@ -938,7 +1014,11 @@ export default function InventoryScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+          >
             <Feather name="arrow-left" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>库存盘点</Text>
@@ -948,38 +1028,64 @@ export default function InventoryScreen() {
         <View style={styles.topBar}>
           {/* 盘点类型选择 */}
           <View style={styles.typeSelector}>
-              <TouchableOpacity style={[styles.typeBtn, checkType === 'whole' && styles.typeBtnActive]}
-                activeOpacity={0.7} onPress={() => {
-                  setCheckType('whole');
-                  setScanRecords([]);
-                  clearCheckRecords();
-                  setExpandedGroups(new Set());
-                }}
-              >
-              <FontAwesome6 name="box" size={12} color={checkType === 'whole' ? theme.white : theme.textSecondary} />
-              <Text style={[styles.typeBtnText, checkType === 'whole' && styles.typeBtnTextActive]}>整包</Text>
+            <TouchableOpacity
+              style={[styles.typeBtn, checkType === 'whole' && styles.typeBtnActive]}
+              activeOpacity={0.7}
+              onPress={() => {
+                setCheckType('whole');
+                setScanRecords([]);
+                clearCheckRecords();
+                setExpandedGroups(new Set());
+              }}
+            >
+              <FontAwesome6
+                name="box"
+                size={12}
+                color={checkType === 'whole' ? theme.white : theme.textSecondary}
+              />
+              <Text style={[styles.typeBtnText, checkType === 'whole' && styles.typeBtnTextActive]}>
+                整包
+              </Text>
             </TouchableOpacity>
-              <TouchableOpacity style={[styles.typeBtn, checkType === 'partial' && styles.typeBtnActive]}
-                activeOpacity={0.7} onPress={() => {
-                  setCheckType('partial');
-                  setScanRecords([]);
-                  clearCheckRecords();
-                  setExpandedGroups(new Set());
-                }}
+            <TouchableOpacity
+              style={[styles.typeBtn, checkType === 'partial' && styles.typeBtnActive]}
+              activeOpacity={0.7}
+              onPress={() => {
+                setCheckType('partial');
+                setScanRecords([]);
+                clearCheckRecords();
+                setExpandedGroups(new Set());
+              }}
+            >
+              <FontAwesome6
+                name="layer-group"
+                size={12}
+                color={checkType === 'partial' ? theme.white : theme.textSecondary}
+              />
+              <Text
+                style={[styles.typeBtnText, checkType === 'partial' && styles.typeBtnTextActive]}
               >
-              <FontAwesome6 name="layer-group" size={12} color={checkType === 'partial' ? theme.white : theme.textSecondary} />
-              <Text style={[styles.typeBtnText, checkType === 'partial' && styles.typeBtnTextActive]}>拆包</Text>
+                拆包
+              </Text>
             </TouchableOpacity>
           </View>
 
           {/* 已保存按钮 */}
-          <TouchableOpacity style={styles.savedBtn} activeOpacity={0.7} onPress={() => setSavedModalVisible(true)}>
+          <TouchableOpacity
+            style={styles.savedBtn}
+            activeOpacity={0.7}
+            onPress={() => setSavedModalVisible(true)}
+          >
             <Feather name="check-circle" size={14} color={theme.textPrimary} />
             <Text style={styles.savedBtnText}>{Object.keys(savedGroupByModel).length}</Text>
           </TouchableOpacity>
 
           {/* 仓库选择 */}
-          <TouchableOpacity style={styles.warehouseBtn} activeOpacity={0.7} onPress={() => setShowWarehousePicker(true)}>
+          <TouchableOpacity
+            style={styles.warehouseBtn}
+            activeOpacity={0.7}
+            onPress={() => setShowWarehousePicker(true)}
+          >
             <FontAwesome6 name="warehouse" size={14} color={theme.textPrimary} />
             <Text style={styles.warehouseText} numberOfLines={1}>
               {currentWarehouse?.name || '仓库'}
@@ -1004,7 +1110,7 @@ export default function InventoryScreen() {
             autoFocus={false}
             showSoftInputOnFocus={false}
           />
-          
+
           {/* Toast */}
           <ToastContainer />
         </View>
@@ -1019,7 +1125,9 @@ export default function InventoryScreen() {
           </View>
           <FlatList
             style={styles.list}
-            contentContainerStyle={aggregatedRecords.length === 0 ? styles.listEmptyContent : styles.listContent}
+            contentContainerStyle={
+              aggregatedRecords.length === 0 ? styles.listEmptyContent : styles.listContent
+            }
             data={aggregatedRecords}
             renderItem={renderAggregatedRecord}
             keyExtractor={aggregatedRecordKeyExtractor}
@@ -1039,7 +1147,11 @@ export default function InventoryScreen() {
           {/* 操作按钮 */}
           {scanRecords.length > 0 && (
             <View style={styles.actionBar}>
-              <TouchableOpacity style={styles.clearBtn} activeOpacity={0.7} onPress={handleClearRecords}>
+              <TouchableOpacity
+                style={styles.clearBtn}
+                activeOpacity={0.7}
+                onPress={handleClearRecords}
+              >
                 <Text style={styles.clearBtnText}>清空</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1063,10 +1175,15 @@ export default function InventoryScreen() {
           <View style={styles.pickerOverlay}>
             <View style={styles.pickerBox}>
               <Text style={styles.pickerTitle}>选择仓库</Text>
-              {warehouses.map(wh => (
-                <TouchableOpacity key={wh.id}
-                  style={[styles.pickerItem, currentWarehouse?.id === wh.id && styles.pickerItemActive]}
-                  activeOpacity={0.7} onPress={() => selectWarehouse(wh)}
+              {warehouses.map((wh) => (
+                <TouchableOpacity
+                  key={wh.id}
+                  style={[
+                    styles.pickerItem,
+                    currentWarehouse?.id === wh.id && styles.pickerItemActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => selectWarehouse(wh)}
                 >
                   <Text style={styles.pickerItemText}>{wh.name}</Text>
                   {currentWarehouse?.id === wh.id && (
@@ -1074,7 +1191,11 @@ export default function InventoryScreen() {
                   )}
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity style={styles.pickerClose} activeOpacity={0.7} onPress={() => setShowWarehousePicker(false)}>
+              <TouchableOpacity
+                style={styles.pickerClose}
+                activeOpacity={0.7}
+                onPress={() => setShowWarehousePicker(false)}
+              >
                 <Text style={styles.pickerCloseText}>关闭</Text>
               </TouchableOpacity>
             </View>
@@ -1092,49 +1213,50 @@ export default function InventoryScreen() {
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
           >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setQuantityModalVisible(false)}
-          >
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>修改实际数量</Text>
-              {editingRecord && (
-                <>
-                  <Text style={styles.modalInfo}>
-                    型号: {editingRecord.model}
-                  </Text>
-                  <Text style={styles.modalInfo}>
-                    标签数量: {editingRecord.quantity}
-                  </Text>
-                  <TextInput
-                    ref={quantityInputRef}
-                    style={styles.modalInput}
-                    value={quantityInput}
-                    onChangeText={setQuantityInput}
-                    onSubmitEditing={handleConfirmQuantity}
-                    placeholder="实际数量"
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="numeric"
-                    autoFocus={false}
-                    
-                    returnKeyType="done"
-                    blurOnSubmit={false}
-                  />
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity style={styles.modalCancelBtn}
-                      activeOpacity={0.7} onPress={() => setQuantityModalVisible(false)}
-                    >
-                      <Text style={styles.modalCancelText}>取消</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.modalConfirmBtn} activeOpacity={0.7} onPress={handleConfirmQuantity}>
-                      <Text style={styles.modalConfirmText}>确认</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
+              onPress={() => setQuantityModalVisible(false)}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>修改实际数量</Text>
+                {editingRecord && (
+                  <>
+                    <Text style={styles.modalInfo}>型号: {editingRecord.model}</Text>
+                    <Text style={styles.modalInfo}>标签数量: {editingRecord.quantity}</Text>
+                    <TextInput
+                      ref={quantityInputRef}
+                      style={styles.modalInput}
+                      value={quantityInput}
+                      onChangeText={setQuantityInput}
+                      onSubmitEditing={handleConfirmQuantity}
+                      placeholder="实际数量"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="numeric"
+                      autoFocus={false}
+                      returnKeyType="done"
+                      blurOnSubmit={false}
+                    />
+                    <View style={styles.modalButtons}>
+                      <TouchableOpacity
+                        style={styles.modalCancelBtn}
+                        activeOpacity={0.7}
+                        onPress={() => setQuantityModalVisible(false)}
+                      >
+                        <Text style={styles.modalCancelText}>取消</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalConfirmBtn}
+                        activeOpacity={0.7}
+                        onPress={handleConfirmQuantity}
+                      >
+                        <Text style={styles.modalConfirmText}>确认</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
           </KeyboardAvoidingView>
         </Modal>
 
@@ -1157,7 +1279,7 @@ export default function InventoryScreen() {
                   <Feather name="x" size={20} color={theme.textMuted} />
                 </TouchableOpacity>
               </View>
-              
+
               {savedInventorySummary.length === 0 ? (
                 <View style={styles.savedEmpty}>
                   <Text style={styles.savedEmptyText}>暂无盘点记录</Text>
@@ -1177,7 +1299,6 @@ export default function InventoryScreen() {
             </View>
           </TouchableOpacity>
         </Modal>
-
       </View>
     </Screen>
   );

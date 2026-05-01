@@ -1133,72 +1133,97 @@ export default function SettingsScreen() {
   const canSync = syncConfig.ip && connectionStatus === 'success';
 
   // 渲染菜单卡片
-  const renderMenuCard = (
-    title: string,
-    desc: string,
-    iconName: keyof typeof Feather.glyphMap,
-    color: string,
-    onPress: () => void,
-    disabled?: boolean,
-    loading?: boolean,
-    rightText?: string
-  ) => (
-    <AnimatedCard
-      onPress={onPress}
-      disabled={disabled || loading}
-      style={disabled ? styles.exportCardDisabled : undefined}
-    >
-      <View style={styles.exportCardContainer}>
-        <View style={styles.exportCard}>
-          <View style={[styles.exportIcon, { backgroundColor: color + '15' }]}>
-            {loading ? (
-              <ActivityIndicator size="small" color={color} />
+  const renderMenuCard = useCallback(
+    (
+      title: string,
+      desc: string,
+      iconName: keyof typeof Feather.glyphMap,
+      color: string,
+      onPress: () => void,
+      disabled?: boolean,
+      loading?: boolean,
+      rightText?: string
+    ) => (
+      <AnimatedCard
+        onPress={onPress}
+        disabled={disabled || loading}
+        style={disabled ? styles.exportCardDisabled : undefined}
+      >
+        <View style={styles.exportCardContainer}>
+          <View style={styles.exportCard}>
+            <View style={[styles.exportIcon, { backgroundColor: color + '15' }]}>
+              {loading ? (
+                <ActivityIndicator size="small" color={color} />
+              ) : (
+                <Feather name={iconName} size={20} color={color} />
+              )}
+            </View>
+            <View style={styles.exportInfo}>
+              <Text style={styles.exportTitle}>{loading ? '处理中...' : title}</Text>
+              <Text style={styles.exportDesc}>{desc}</Text>
+            </View>
+            {rightText ? (
+              <Text style={[styles.rightText, { color }]}>{rightText}</Text>
             ) : (
-              <Feather name={iconName} size={20} color={color} />
+              <Feather name="chevron-right" size={16} color={theme.textMuted} />
             )}
           </View>
-          <View style={styles.exportInfo}>
-            <Text style={styles.exportTitle}>{loading ? '处理中...' : title}</Text>
-            <Text style={styles.exportDesc}>{desc}</Text>
-          </View>
-          {rightText ? (
-            <Text style={[styles.rightText, { color }]}>{rightText}</Text>
-          ) : (
-            <Feather name="chevron-right" size={16} color={theme.textMuted} />
-          )}
         </View>
-      </View>
-    </AnimatedCard>
+      </AnimatedCard>
+    ),
+    [
+      styles.exportCardContainer,
+      styles.exportCard,
+      styles.exportCardDisabled,
+      styles.exportIcon,
+      styles.exportInfo,
+      styles.exportTitle,
+      styles.exportDesc,
+      styles.rightText,
+      theme.textMuted,
+    ]
   );
 
   // 渲染开关设置项
-  const renderSwitchCard = (
-    title: string,
-    desc: string,
-    iconName: keyof typeof Feather.glyphMap,
-    color: string,
-    value: boolean,
-    onValueChange: (value: boolean) => void
-  ) => (
-    <AnimatedCard onPress={() => onValueChange(!value)}>
-      <View style={styles.exportCardContainer}>
-        <View style={styles.exportCard}>
-          <View style={[styles.exportIcon, { backgroundColor: color + '15' }]}>
-            <Feather name={iconName} size={20} color={color} />
+  const renderSwitchCard = useCallback(
+    (
+      title: string,
+      desc: string,
+      iconName: keyof typeof Feather.glyphMap,
+      color: string,
+      value: boolean,
+      onValueChange: (value: boolean) => void
+    ) => (
+      <AnimatedCard onPress={() => onValueChange(!value)}>
+        <View style={styles.exportCardContainer}>
+          <View style={styles.exportCard}>
+            <View style={[styles.exportIcon, { backgroundColor: color + '15' }]}>
+              <Feather name={iconName} size={20} color={color} />
+            </View>
+            <View style={styles.exportInfo}>
+              <Text style={styles.exportTitle}>{title}</Text>
+              <Text style={styles.exportDesc}>{desc}</Text>
+            </View>
+            <Switch
+              value={value}
+              onValueChange={onValueChange}
+              trackColor={{ false: theme.border, true: color + '80' }}
+              thumbColor={value ? color : theme.textMuted}
+            />
           </View>
-          <View style={styles.exportInfo}>
-            <Text style={styles.exportTitle}>{title}</Text>
-            <Text style={styles.exportDesc}>{desc}</Text>
-          </View>
-          <Switch
-            value={value}
-            onValueChange={onValueChange}
-            trackColor={{ false: theme.border, true: color + '80' }}
-            thumbColor={value ? color : theme.textMuted}
-          />
         </View>
-      </View>
-    </AnimatedCard>
+      </AnimatedCard>
+    ),
+    [
+      styles.exportCardContainer,
+      styles.exportCard,
+      styles.exportIcon,
+      styles.exportInfo,
+      styles.exportTitle,
+      styles.exportDesc,
+      theme.border,
+      theme.textMuted,
+    ]
   );
 
   return (

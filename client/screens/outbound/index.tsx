@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJsonParseNullable } from '@/utils/json';
+import { parseQuantity } from '@/utils/quantity';
 import { useTheme } from '@/hooks/useTheme';
 import { Screen } from '@/components/Screen';
 import { createStyles } from './styles';
@@ -291,7 +292,7 @@ export default function PDAScanScreen() {
                 operation_type: 'outbound',
                 model: parsed.model || '',
                 batch: parsed.batch || '',
-                quantity: parseInt(parsed.quantity || '1', 10),
+                quantity: parseQuantity(parsed.quantity || '1') ?? 1,
                 traceNo: parsed.traceNo,
                 sourceNo: parsed.sourceNo,
                 package: parsed.package,

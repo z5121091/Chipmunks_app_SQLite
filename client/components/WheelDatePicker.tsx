@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -175,55 +175,68 @@ export function WheelDatePicker({
   const styles = createStyles(theme);
 
   // 渲染滚轮列
-  const renderWheelColumn = (
-    items: string[],
-    selectedValue: string,
-    onSelect: (value: string) => void,
-    scrollRef: React.RefObject<ScrollView | null>,
-    label: string
-  ) => (
-    <View style={styles.wheelColumn}>
-      <Text style={styles.wheelLabel}>{label}</Text>
-      <View style={styles.wheelContainer}>
-        <View style={styles.selectionIndicator} />
-        <ScrollView
-          ref={scrollRef}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={ITEM_HEIGHT}
-          decelerationRate="fast"
-          onMomentumScrollEnd={(e) => {
-            const index = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
-            if (items[index]) {
-              onSelect(items[index]);
-            }
-          }}
-          contentContainerStyle={styles.wheelScrollContent}
-        >
-          {/* 顶部占位 */}
-          <View style={{ height: ITEM_HEIGHT * 2 }} />
+  const renderWheelColumn = useCallback(
+    (
+      items: string[],
+      selectedValue: string,
+      onSelect: (value: string) => void,
+      scrollRef: React.RefObject<ScrollView | null>,
+      label: string
+    ) => (
+      <View style={styles.wheelColumn}>
+        <Text style={styles.wheelLabel}>{label}</Text>
+        <View style={styles.wheelContainer}>
+          <View style={styles.selectionIndicator} />
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            snapToInterval={ITEM_HEIGHT}
+            decelerationRate="fast"
+            onMomentumScrollEnd={(e) => {
+              const index = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+              if (items[index]) {
+                onSelect(items[index]);
+              }
+            }}
+            contentContainerStyle={styles.wheelScrollContent}
+          >
+            {/* 顶部占位 */}
+            <View style={{ height: ITEM_HEIGHT * 2 }} />
 
-          {items.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[styles.wheelItem, selectedValue === item && styles.wheelItemSelected]}
-              onPress={() => onSelect(item)}
-            >
-              <Text
-                style={[
-                  styles.wheelItemText,
-                  selectedValue === item && styles.wheelItemTextSelected,
-                ]}
+            {items.map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[styles.wheelItem, selectedValue === item && styles.wheelItemSelected]}
+                onPress={() => onSelect(item)}
               >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.wheelItemText,
+                    selectedValue === item && styles.wheelItemTextSelected,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            ))}
 
-          {/* 底部占位 */}
-          <View style={{ height: ITEM_HEIGHT * 2 }} />
-        </ScrollView>
+            {/* 底部占位 */}
+            <View style={{ height: ITEM_HEIGHT * 2 }} />
+          </ScrollView>
+        </View>
       </View>
-    </View>
+    ),
+    [
+      styles.wheelColumn,
+      styles.wheelLabel,
+      styles.wheelContainer,
+      styles.selectionIndicator,
+      styles.wheelScrollContent,
+      styles.wheelItem,
+      styles.wheelItemSelected,
+      styles.wheelItemText,
+      styles.wheelItemTextSelected,
+    ]
   );
 
   return (
