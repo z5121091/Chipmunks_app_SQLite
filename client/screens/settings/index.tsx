@@ -40,6 +40,7 @@ import {
   importDatabaseFile,
   CustomField,
   BackupData,
+  isBackupDataShape,
   STORAGE_KEYS,
 } from '@/utils/database';
 import { formatDateTime, formatTime, formatDate, formatDateTimeExport } from '@/utils/time';
@@ -75,24 +76,6 @@ const isSyncConfig = (value: unknown): value is SyncConfig => {
     value !== null &&
     typeof (value as SyncConfig).ip === 'string' &&
     typeof (value as SyncConfig).port === 'string'
-  );
-};
-
-const isBackupData = (value: unknown): value is BackupData => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<BackupData>;
-  return (
-    typeof candidate.backupTime === 'string' &&
-    (candidate.rules === undefined || Array.isArray(candidate.rules)) &&
-    (candidate.customFields === undefined || Array.isArray(candidate.customFields)) &&
-    (candidate.inventoryBindings === undefined || Array.isArray(candidate.inventoryBindings)) &&
-    (candidate.warehouses === undefined || Array.isArray(candidate.warehouses)) &&
-    (candidate.syncConfig === undefined ||
-      candidate.syncConfig === null ||
-      isSyncConfig(candidate.syncConfig))
   );
 };
 
@@ -1004,7 +987,7 @@ export default function SettingsScreen() {
       const parsedBackupData = safeJsonParseNullable<BackupData>(
         fileContent,
         'settings.backupFile',
-        isBackupData
+        isBackupDataShape
       );
 
       if (!parsedBackupData) {

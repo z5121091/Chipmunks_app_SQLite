@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import { Base64 } from 'js-base64';
 import { APP_VERSION } from '@/constants/version';
 import { STORAGE_KEYS, ExportType, ExportCountData, SyncConfig } from '@/constants/config';
 import { getISODateTime, getExportDateTime, formatDateTime, getTodayLocal } from './time';
@@ -299,7 +300,7 @@ export interface BackupData {
   // V3.0 新增
   inventoryBindings: InventoryBinding[];
   warehouses: Warehouse[];
-  syncConfig?: any;
+  syncConfig?: SyncConfig | null;
   stats?: {
     rules: number;
     customFields: number;
@@ -308,6 +309,130 @@ export interface BackupData {
     hasSyncConfig?: boolean;
   };
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  return isPlainObject(value) && Object.values(value).every((item) => typeof item === 'string');
+};
+
+const isStringArray = (value: unknown): value is string[] => {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+};
+
+const isSyncConfigShape = (value: unknown): value is SyncConfig => {
+  return (
+    isPlainObject(value) &&
+    typeof value.ip === 'string' &&
+    typeof value.port === 'string'
+  );
+};
+
+const isMatchConditionShape = (value: unknown): value is MatchCondition => {
+  return (
+    isPlainObject(value) &&
+    typeof value.fieldIndex === 'number' &&
+    Number.isInteger(value.fieldIndex) &&
+    typeof value.keyword === 'string'
+  );
+};
+
+const isQRCodeRuleShape = (value: unknown): value is QRCodeRule => {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.description === 'string' &&
+    typeof value.separator === 'string' &&
+    isStringArray(value.fieldOrder) &&
+    typeof value.isActive === 'boolean' &&
+    typeof value.created_at === 'string' &&
+    typeof value.updated_at === 'string' &&
+    (value.customFieldIds === undefined || isStringArray(value.customFieldIds)) &&
+    (value.fieldPrefixes === undefined || isStringRecord(value.fieldPrefixes)) &&
+    (value.supplierName === undefined || typeof value.supplierName === 'string') &&
+    (value.matchConditions === undefined ||
+      (Array.isArray(value.matchConditions) &&
+        value.matchConditions.every((item) => isMatchConditionShape(item))))
+  );
+};
+
+const isCustomFieldShape = (value: unknown): value is CustomField => {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    (value.type === 'text' ||
+      value.type === 'number' ||
+      value.type === 'date' ||
+      value.type === 'select') &&
+    typeof value.required === 'boolean' &&
+    typeof value.sortOrder === 'number' &&
+    Number.isInteger(value.sortOrder) &&
+    typeof value.created_at === 'string' &&
+    typeof value.updated_at === 'string' &&
+    (value.options === undefined || isStringArray(value.options))
+  );
+};
+
+const isInventoryBindingShape = (value: unknown): value is InventoryBinding => {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.scan_model === 'string' &&
+    typeof value.inventory_code === 'string' &&
+    typeof value.created_at === 'string' &&
+    (value.supplier === undefined || typeof value.supplier === 'string') &&
+    (value.description === undefined || typeof value.description === 'string')
+  );
+};
+
+const isWarehouseShape = (value: unknown): value is Warehouse => {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    (value.description === undefined || typeof value.description === 'string') &&
+    (value.is_default === undefined || typeof value.is_default === 'boolean') &&
+    (value.created_at === undefined || typeof value.created_at === 'string')
+  );
+};
+
+const isBackupStatsShape = (
+  value: unknown
+): value is NonNullable<BackupData['stats']> => {
+  return (
+    isPlainObject(value) &&
+    typeof value.rules === 'number' &&
+    typeof value.customFields === 'number' &&
+    typeof value.inventoryBindings === 'number' &&
+    typeof value.warehouses === 'number' &&
+    (value.hasSyncConfig === undefined || typeof value.hasSyncConfig === 'boolean')
+  );
+};
+
+export const isBackupDataShape = (value: unknown): value is BackupData => {
+  return (
+    isPlainObject(value) &&
+    typeof value.version === 'number' &&
+    typeof value.timestamp === 'string' &&
+    (value.backupTime === undefined || typeof value.backupTime === 'string') &&
+    Array.isArray(value.rules) &&
+    value.rules.every((item) => isQRCodeRuleShape(item)) &&
+    Array.isArray(value.customFields) &&
+    value.customFields.every((item) => isCustomFieldShape(item)) &&
+    Array.isArray(value.inventoryBindings) &&
+    value.inventoryBindings.every((item) => isInventoryBindingShape(item)) &&
+    Array.isArray(value.warehouses) &&
+    value.warehouses.every((item) => isWarehouseShape(item)) &&
+    (value.syncConfig === undefined ||
+      value.syncConfig === null ||
+      isSyncConfigShape(value.syncConfig)) &&
+    (value.stats === undefined || isBackupStatsShape(value.stats))
+  );
+};
 
 // 生成唯一ID
 export const generateId = (): string => {
@@ -409,6 +534,23 @@ const rollbackTransaction = async (database: SQLite.SQLiteDatabase, context: str
     await database.execAsync('ROLLBACK');
   } catch (rollbackError) {
     console.error(`[${context}] 回滚失败:`, rollbackError);
+  }
+};
+
+const executeTransactionalStatements = async (
+  database: SQLite.SQLiteDatabase,
+  statements: string[],
+  context: string
+): Promise<void> => {
+  await database.execAsync('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    for (const statement of statements) {
+      await database.runAsync(statement);
+    }
+    await database.execAsync('COMMIT');
+  } catch (error) {
+    await rollbackTransaction(database, context);
+    throw error;
   }
 };
 
@@ -3382,7 +3524,7 @@ export const getDefaultWarehouse = async (): Promise<Warehouse | null> => {
   try {
     const database = getDb();
     const result = await database.getFirstAsync<any>(
-      'SELECT * FROM warehouses WHERE is_default = 1'
+      'SELECT * FROM warehouses WHERE is_default = 1 ORDER BY created_at ASC, id ASC LIMIT 1'
     );
 
     if (!result) return null;
@@ -3406,15 +3548,23 @@ export const addWarehouse = async (
     const id = generateId();
     const isoDateTime = getISODateTime();
 
-    // 如果设置为默认仓库，先取消其他仓库的默认状态
-    if (warehouse.is_default) {
-      await database.runAsync('UPDATE warehouses SET is_default = 0');
-    }
+    await database.execAsync('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      // 如果设置为默认仓库，先取消其他仓库的默认状态
+      if (warehouse.is_default) {
+        await database.runAsync('UPDATE warehouses SET is_default = 0');
+      }
 
-    await database.runAsync(
-      'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
-      [id, warehouse.name, warehouse.description || null, warehouse.is_default ? 1 : 0, isoDateTime]
-    );
+      await database.runAsync(
+        'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
+        [id, warehouse.name, warehouse.description || null, warehouse.is_default ? 1 : 0, isoDateTime]
+      );
+
+      await database.execAsync('COMMIT');
+    } catch (error) {
+      await rollbackTransaction(database, 'addWarehouse');
+      throw error;
+    }
 
     return id;
   } catch (error) {
@@ -3441,16 +3591,23 @@ export const updateWarehouse = async (id: string, updates: Partial<Warehouse>): 
     });
 
     if (updateFields.length > 0) {
-      // 如果设置为默认仓库，先取消其他仓库的默认状态
-      if (updates.is_default) {
-        await database.runAsync('UPDATE warehouses SET is_default = 0 WHERE id != ?', [id]);
-      }
+      await database.execAsync('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        // 如果设置为默认仓库，先取消其他仓库的默认状态
+        if (updates.is_default) {
+          await database.runAsync('UPDATE warehouses SET is_default = 0 WHERE id != ?', [id]);
+        }
 
-      values.push(id);
-      await database.runAsync(
-        `UPDATE warehouses SET ${updateFields.join(', ')} WHERE id = ?`,
-        values
-      );
+        values.push(id);
+        await database.runAsync(
+          `UPDATE warehouses SET ${updateFields.join(', ')} WHERE id = ?`,
+          values
+        );
+        await database.execAsync('COMMIT');
+      } catch (error) {
+        await rollbackTransaction(database, 'updateWarehouse');
+        throw error;
+      }
     }
   } catch (error) {
     console.error('更新仓库失败:', error);
@@ -4923,14 +5080,19 @@ export const parseWithRule = (
 export const clearAllBusinessData = async (): Promise<void> => {
   try {
     const database = getDb();
-    // 清空业务数据
-    await database.runAsync('DELETE FROM orders');
-    await database.runAsync('DELETE FROM materials');
-    await database.runAsync('DELETE FROM unpack_records');
-    await database.runAsync('DELETE FROM print_history');
-    await database.runAsync('DELETE FROM inbound_records');
-    await database.runAsync('DELETE FROM inbound_summary');
-    await database.runAsync('DELETE FROM inventory_check_records');
+    await executeTransactionalStatements(
+      database,
+      [
+        'DELETE FROM orders',
+        'DELETE FROM materials',
+        'DELETE FROM unpack_records',
+        'DELETE FROM print_history',
+        'DELETE FROM inbound_records',
+        'DELETE FROM inbound_summary',
+        'DELETE FROM inventory_check_records',
+      ],
+      'clearAllBusinessData'
+    );
     // 保留：qr_code_rules、custom_fields、warehouses、inventory_bindings、system_config
   } catch (error) {
     console.error('清空业务数据失败:', error);
@@ -4942,10 +5104,16 @@ export const clearAllBusinessData = async (): Promise<void> => {
 export const clearAllConfigData = async (): Promise<void> => {
   try {
     const database = getDb();
-    await database.runAsync('DELETE FROM qr_code_rules');
-    await database.runAsync('DELETE FROM custom_fields');
-    await database.runAsync('DELETE FROM inventory_bindings');
-    await database.runAsync('DELETE FROM warehouses');
+    await executeTransactionalStatements(
+      database,
+      [
+        'DELETE FROM qr_code_rules',
+        'DELETE FROM custom_fields',
+        'DELETE FROM inventory_bindings',
+        'DELETE FROM warehouses',
+      ],
+      'clearAllConfigData'
+    );
   } catch (error) {
     console.error('清空配置数据失败:', error);
     throw error;
@@ -4956,15 +5124,21 @@ export const clearAllConfigData = async (): Promise<void> => {
 export const clearAllDataV3 = async (): Promise<void> => {
   try {
     const database = getDb();
-    await database.runAsync('DELETE FROM orders');
-    await database.runAsync('DELETE FROM materials');
-    await database.runAsync('DELETE FROM unpack_records');
-    await database.runAsync('DELETE FROM print_history');
-    await database.runAsync('DELETE FROM inbound_records');
-    await database.runAsync('DELETE FROM inbound_summary');
-    await database.runAsync('DELETE FROM inventory_check_records');
-    await database.runAsync('DELETE FROM inventory_bindings');
-    await database.runAsync('DELETE FROM warehouses');
+    await executeTransactionalStatements(
+      database,
+      [
+        'DELETE FROM orders',
+        'DELETE FROM materials',
+        'DELETE FROM unpack_records',
+        'DELETE FROM print_history',
+        'DELETE FROM inbound_records',
+        'DELETE FROM inbound_summary',
+        'DELETE FROM inventory_check_records',
+        'DELETE FROM inventory_bindings',
+        'DELETE FROM warehouses',
+      ],
+      'clearAllDataV3'
+    );
   } catch (error) {
     console.error('清空所有数据失败:', error);
     throw error;
@@ -4974,10 +5148,24 @@ export const clearAllDataV3 = async (): Promise<void> => {
 // 清空所有数据（包括配置）
 export const clearAllData = async (): Promise<void> => {
   try {
-    await clearAllDataV3();
     const database = getDb();
-    await database.runAsync('DELETE FROM qr_code_rules');
-    await database.runAsync('DELETE FROM custom_fields');
+    await executeTransactionalStatements(
+      database,
+      [
+        'DELETE FROM orders',
+        'DELETE FROM materials',
+        'DELETE FROM unpack_records',
+        'DELETE FROM print_history',
+        'DELETE FROM inbound_records',
+        'DELETE FROM inbound_summary',
+        'DELETE FROM inventory_check_records',
+        'DELETE FROM inventory_bindings',
+        'DELETE FROM warehouses',
+        'DELETE FROM qr_code_rules',
+        'DELETE FROM custom_fields',
+      ],
+      'clearAllData'
+    );
   } catch (error) {
     console.error('清空所有数据失败:', error);
     throw error;
@@ -5039,6 +5227,10 @@ export const importBackupData = async (
   };
 }> => {
   try {
+    if (!isBackupDataShape(backup)) {
+      throw new Error('备份文件结构无效');
+    }
+
     const database = getDb();
 
     // 1. 检查程序中是否有配置数据
@@ -5290,6 +5482,84 @@ export const incrementExportCount = async (type: ExportType): Promise<number> =>
 
 // ========== 数据库文件备份/恢复 ==========
 
+const SQLITE_FILE_HEADER = 'SQLite format 3\u0000';
+const RESTORE_SCHEMA_REQUIREMENTS: Record<string, string[]> = {
+  system_config: ['key', 'value'],
+  orders: ['id', 'order_no', 'created_at'],
+  materials: ['id', 'order_no', 'quantity', 'scanned_at', 'warehouse_id'],
+  qr_code_rules: ['id', 'name', 'separator', 'field_order', 'is_active', 'field_prefixes'],
+  custom_fields: ['id', 'name', 'type', 'required', 'sort_order'],
+  warehouses: ['id', 'name', 'is_default', 'created_at'],
+  inventory_bindings: ['id', 'scan_model', 'inventory_code', 'created_at'],
+  unpack_records: ['id', 'original_material_id', 'new_quantity', 'pair_id', 'unpacked_at'],
+  print_history: ['id', 'unpack_record_ids', 'printed_at', 'created_at'],
+  inbound_records: ['id', 'inbound_no', 'warehouse_id', 'scan_model', 'quantity', 'created_at'],
+  inbound_summary: ['id', 'warehouse_id', 'scan_model', 'total_quantity', 'updated_at'],
+  inventory_check_records: [
+    'id',
+    'check_no',
+    'warehouse_id',
+    'scan_model',
+    'check_type',
+    'created_at',
+  ],
+};
+
+const getSelectedDatabaseFileName = (asset: { name?: string; uri: string }): string => {
+  if (asset.name?.trim()) {
+    return asset.name.trim();
+  }
+
+  const uriFileName = asset.uri.split('/').pop()?.trim() || '';
+  return uriFileName.includes('.') ? uriFileName : '';
+};
+
+const hasSQLiteHeader = async (fileUri: string): Promise<boolean> => {
+  try {
+    const headerBase64 = await FS.readAsStringAsync(fileUri, {
+      encoding: FS.EncodingType.Base64,
+      position: 0,
+      length: SQLITE_FILE_HEADER.length,
+    });
+    const headerBytes = Base64.toUint8Array(headerBase64);
+    const expectedBytes = Uint8Array.from(
+      Array.from(SQLITE_FILE_HEADER, (char) => char.charCodeAt(0))
+    );
+
+    if (headerBytes.length < expectedBytes.length) {
+      return false;
+    }
+
+    return expectedBytes.every((byte, index) => headerBytes[index] === byte);
+  } catch (error) {
+    console.error('[importDatabaseFile] 读取 SQLite 文件头失败:', error);
+    return false;
+  }
+};
+
+const validateRestoredDatabaseSchema = async (
+  database: SQLite.SQLiteDatabase
+): Promise<void> => {
+  for (const [tableName, requiredColumns] of Object.entries(RESTORE_SCHEMA_REQUIREMENTS)) {
+    const tableExists = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [tableName]
+    );
+
+    if (!tableExists) {
+      throw new Error(`数据库缺少必要数据表: ${tableName}`);
+    }
+
+    const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+    const columnSet = new Set(columns.map((column) => column.name));
+    const missingColumns = requiredColumns.filter((column) => !columnSet.has(column));
+
+    if (missingColumns.length > 0) {
+      throw new Error(`数据库表 ${tableName} 缺少字段: ${missingColumns.join(', ')}`);
+    }
+  }
+};
+
 // 获取数据库文件路径
 const getDatabaseFilePath = (): string => {
   // Expo SQLite 将数据库文件存储在应用的文档目录下
@@ -5446,13 +5716,23 @@ export const importDatabaseFile = async (): Promise<{
       };
     }
 
-    const sourceFileUri = result.assets[0].uri;
+    const selectedAsset = result.assets[0];
+    const sourceFileUri = selectedAsset.uri;
+    const selectedFileName = getSelectedDatabaseFileName(selectedAsset);
+    const hasDbExtension = selectedFileName.toLowerCase().endsWith('.db');
+    const sqliteHeaderValid = await hasSQLiteHeader(sourceFileUri);
 
-    // 验证文件扩展名必须是 .db
-    if (!sourceFileUri.toLowerCase().endsWith('.db')) {
+    if (!hasDbExtension && !sqliteHeaderValid) {
       return {
         success: false,
-        message: '请选择 .db 格式的数据库文件',
+        message: '请选择有效的 SQLite 数据库备份文件',
+      };
+    }
+
+    if (!sqliteHeaderValid) {
+      return {
+        success: false,
+        message: '所选文件不是有效的 SQLite 数据库文件',
       };
     }
 
@@ -5491,7 +5771,9 @@ export const importDatabaseFile = async (): Promise<{
       // 4. 重新打开数据库
       db = await SQLite.openDatabaseAsync('warehouse.db');
 
-      // 5. 验证数据库是否可用，获取统计数据
+      // 5. 验证数据库结构是否兼容，再获取统计数据
+      await validateRestoredDatabaseSchema(db);
+
       const orders = await db.getFirstAsync<{ count: number }>(
         'SELECT COUNT(*) as count FROM orders'
       );
