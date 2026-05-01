@@ -23,7 +23,7 @@ const getSeparatorLabel = (separator: string): string => {
 
 const getPrefixCount = (rule: QRCodeRule): number => {
   const prefixes = rule.fieldPrefixes || {};
-  return (rule.fieldOrder || []).filter(fieldKey => prefixes[fieldKey]?.trim()).length;
+  return (rule.fieldOrder || []).filter((fieldKey) => prefixes[fieldKey]?.trim()).length;
 };
 
 export default function RulePrefixesScreen() {
@@ -51,57 +51,97 @@ export default function RulePrefixesScreen() {
     }, [loadRules])
   );
 
-  const renderRule = ({ item }: { item: QRCodeRule }) => {
-    const prefixCount = getPrefixCount(item);
+  const renderRule = useCallback(
+    ({ item }: { item: QRCodeRule }) => {
+      const prefixCount = getPrefixCount(item);
 
-    return (
-      <TouchableOpacity
-        style={styles.ruleCard}
-        activeOpacity={0.72}
-        onPress={() => router.push('/rule-prefix-edit', { ruleId: item.id })}
-      >
-        <View style={styles.ruleHeader}>
-          <View style={styles.ruleTitleWrap}>
-            <Text style={styles.ruleName} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.ruleDescription} numberOfLines={2}>
-              {item.description || '未填写规则描述'}
-            </Text>
-          </View>
-          <Feather name="chevron-right" size={18} color={theme.textMuted} />
-        </View>
-
-        <View style={styles.ruleMetaRow}>
-          <View style={styles.metaPill}>
-            <Feather name="scissors" size={12} color={theme.textSecondary} />
-            <Text style={styles.metaText}>分隔符 {getSeparatorLabel(item.separator)}</Text>
-          </View>
-          <View style={styles.metaPill}>
-            <Feather name="list" size={12} color={theme.textSecondary} />
-            <Text style={styles.metaText}>{item.fieldOrder?.length || 0} 个字段</Text>
-          </View>
-        </View>
-
-        <View style={styles.badgeRow}>
-          {!item.isActive && (
-            <View style={styles.disabledBadge}>
-              <Text style={styles.disabledBadgeText}>未启用</Text>
+      return (
+        <TouchableOpacity
+          style={styles.ruleCard}
+          activeOpacity={0.72}
+          onPress={() => router.push('/rule-prefix-edit', { ruleId: item.id })}
+        >
+          <View style={styles.ruleHeader}>
+            <View style={styles.ruleTitleWrap}>
+              <Text style={styles.ruleName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.ruleDescription} numberOfLines={2}>
+                {item.description || '未填写规则描述'}
+              </Text>
             </View>
-          )}
-          {prefixCount > 0 && (
-            <View style={styles.prefixBadge}>
-              <Text style={styles.prefixBadgeText}>{prefixCount} 个前缀</Text>
+            <Feather name="chevron-right" size={18} color={theme.textMuted} />
+          </View>
+
+          <View style={styles.ruleMetaRow}>
+            <View style={styles.metaPill}>
+              <Feather name="scissors" size={12} color={theme.textSecondary} />
+              <Text style={styles.metaText}>分隔符 {getSeparatorLabel(item.separator)}</Text>
             </View>
-          )}
+            <View style={styles.metaPill}>
+              <Feather name="list" size={12} color={theme.textSecondary} />
+              <Text style={styles.metaText}>{item.fieldOrder?.length || 0} 个字段</Text>
+            </View>
+          </View>
+
+          <View style={styles.badgeRow}>
+            {!item.isActive && (
+              <View style={styles.disabledBadge}>
+                <Text style={styles.disabledBadgeText}>未启用</Text>
+              </View>
+            )}
+            {prefixCount > 0 && (
+              <View style={styles.prefixBadge}>
+                <Text style={styles.prefixBadgeText}>{prefixCount} 个前缀</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [
+      router,
+      styles.badgeRow,
+      styles.disabledBadge,
+      styles.disabledBadgeText,
+      styles.metaPill,
+      styles.metaText,
+      styles.prefixBadge,
+      styles.prefixBadgeText,
+      styles.ruleCard,
+      styles.ruleDescription,
+      styles.ruleHeader,
+      styles.ruleMetaRow,
+      styles.ruleName,
+      styles.ruleTitleWrap,
+      theme.textMuted,
+      theme.textSecondary,
+    ]
+  );
+
+  const renderListHeader = useCallback(
+    () => (
+      <View style={styles.infoCard}>
+        <View style={styles.infoIcon}>
+          <Feather name="tag" size={18} color={theme.success} />
         </View>
-      </TouchableOpacity>
-    );
-  };
+        <Text style={styles.infoText}>选择一个解析规则，配置其字段的识别前缀。</Text>
+      </View>
+    ),
+    [styles.infoCard, styles.infoIcon, styles.infoText, theme.success]
+  );
+
+  const renderSeparator = useCallback(() => <View style={styles.itemGap} />, [styles.itemGap]);
 
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+          >
             <Feather name="arrow-left" size={20} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>字段前缀配置</Text>
@@ -109,7 +149,7 @@ export default function RulePrefixesScreen() {
 
         <FlatList
           data={rules}
-          keyExtractor={item => item.id}
+          keyExtractor={(item) => item.id}
           renderItem={renderRule}
           refreshing={loading}
           onRefresh={loadRules}
@@ -118,14 +158,7 @@ export default function RulePrefixesScreen() {
             { paddingBottom: insets.bottom + 100 },
             rules.length === 0 && styles.emptyListContent,
           ]}
-          ListHeaderComponent={
-            <View style={styles.infoCard}>
-              <View style={styles.infoIcon}>
-                <Feather name="tag" size={18} color={theme.success} />
-              </View>
-              <Text style={styles.infoText}>选择一个解析规则，配置其字段的识别前缀。</Text>
-            </View>
-          }
+          ListHeaderComponent={renderListHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIcon}>
@@ -135,7 +168,7 @@ export default function RulePrefixesScreen() {
               <Text style={styles.emptyText}>请先在解析规则中创建规则</Text>
             </View>
           }
-          ItemSeparatorComponent={() => <View style={styles.itemGap} />}
+          ItemSeparatorComponent={renderSeparator}
           showsVerticalScrollIndicator={false}
         />
       </View>

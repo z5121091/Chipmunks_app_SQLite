@@ -1,6 +1,6 @@
 /**
  * 在线更新工具
- * 
+ *
  * 封装版本检查、下载、安装等功能
  */
 import * as Updates from 'expo-updates';
@@ -72,7 +72,7 @@ export const base64Encode = (str: string): string => {
 export const compareVersions = (v1: string, v2: string): number => {
   const parts1 = v1.replace(/[Vv]/, '').split('.').map(Number);
   const parts2 = v2.replace(/[Vv]/, '').split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const p1 = parts1[i] || 0;
     const p2 = parts2[i] || 0;
@@ -90,13 +90,13 @@ export const checkForUpdate = async (
   currentVersion: string
 ): Promise<UpdateInfo | null> => {
   try {
-    const updateXmlUrl = serverUrl.includes('AppUpdate') 
+    const updateXmlUrl = serverUrl.includes('AppUpdate')
       ? serverUrl.replace(/\/[^/]*$/, '/update.xml')
       : `${serverUrl}/update.xml`;
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+
     let response: Response;
     try {
       response = await fetch(updateXmlUrl, {
@@ -106,30 +106,30 @@ export const checkForUpdate = async (
     } finally {
       clearTimeout(timeoutId);
     }
-    
+
     if (!response.ok) {
       return null;
     }
-    
+
     const xmlText = await response.text();
-    
+
     // 简单解析 XML
     const versionMatch = xmlText.match(/<version>([^<]+)<\/version>/);
     const urlMatch = xmlText.match(/<url>([^<]+)<\/url>/);
     const forceMatch = xmlText.match(/<force>([^<]+)<\/force>/);
     const changelogMatch = xmlText.match(/<changelog><!\[CDATA\[([\s\S]*?)\]\]><\/changelog>/);
-    
+
     if (!versionMatch || !urlMatch) {
       return null;
     }
-    
+
     const latestVersion = versionMatch[1];
-    
+
     // 比较版本
     if (compareVersions(latestVersion, currentVersion) <= 0) {
       return null;
     }
-    
+
     return {
       version: latestVersion,
       downloadUrl: urlMatch[1],
@@ -153,7 +153,9 @@ export const saveUpdateServer = async (url: string): Promise<void> => {
  * 获取更新服务器地址
  */
 export const getUpdateServer = async (): Promise<string> => {
-  return (await AsyncStorage.getItem(STORAGE_KEYS.UPDATE_SERVER_URL)) || UPDATE_CONFIG.DEFAULT_SERVER;
+  return (
+    (await AsyncStorage.getItem(STORAGE_KEYS.UPDATE_SERVER_URL)) || UPDATE_CONFIG.DEFAULT_SERVER
+  );
 };
 
 /**
@@ -164,13 +166,13 @@ export const downloadAndInstallWithExpoUpdates = async (
 ): Promise<boolean> => {
   try {
     const update = await Updates.checkForUpdateAsync();
-    
+
     if (!update.isAvailable) {
       return false;
     }
-    
+
     await Updates.fetchUpdateAsync();
-    
+
     await Updates.reloadAsync();
     return true;
   } catch (error) {
@@ -189,9 +191,9 @@ export const downloadAndInstallWithIntent = async (
 ): Promise<boolean> => {
   try {
     const localUri = `${FileSystem.cacheDirectory}${UPDATE_CONFIG.APK_FILE_NAME}`;
-    
+
     const downloadPromise = FileSystem.downloadAsync(downloadUrl, localUri);
-    
+
     // 轮询进度
     const progressTimer = setInterval(async () => {
       try {
@@ -202,28 +204,31 @@ export const downloadAndInstallWithIntent = async (
           onProgress?.(estimated);
         }
         // 静默忽略：文件还没下载完成时 getInfoAsync 可能失败，不影响主流程
-      } catch {}
+      } catch (error) {
+        // 下载初期文件可能尚未生成，这里不打断主流程。
+        void error;
+      }
     }, 500);
-    
+
     if (progressRef) {
       progressRef.current = progressTimer;
     }
-    
+
     const result = await downloadPromise;
-    
+
     clearInterval(progressTimer);
     onProgress?.(1);
-    
+
     if (result.status !== 200) {
       return false;
     }
-    
+
     // 启动安装
     await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
       data: result.uri,
       flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
     });
-    
+
     return true;
   } catch (error) {
     console.error('下载安装失败:', error);

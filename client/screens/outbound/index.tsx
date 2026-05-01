@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  FlatList,
-  TextInput,
-  Alert,
-  Platform,
-} from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, TextInput, Alert, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,7 +28,16 @@ import { STORAGE_KEYS } from '@/constants/config';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
 import { Spacing } from '@/constants/theme';
 import { Feather, FontAwesome6 } from '@expo/vector-icons';
-import { feedbackSuccess, feedbackError, feedbackWarning, feedbackDuplicate, feedbackNewOrder, feedbackSwitchOrder, initSoundSetting, useFeedbackCleanup } from '@/utils/feedback';
+import {
+  feedbackSuccess,
+  feedbackError,
+  feedbackWarning,
+  feedbackDuplicate,
+  feedbackNewOrder,
+  feedbackSwitchOrder,
+  initSoundSetting,
+  useFeedbackCleanup,
+} from '@/utils/feedback';
 import { useToast } from '@/utils/toast';
 import { getISODateTime } from '@/utils/time';
 
@@ -69,67 +70,76 @@ interface AggregatedGroup {
 // ========================================
 // React.memo 优化：列表项组件
 // ========================================
-const RecordItem = React.memo(({ group, isExpanded, onToggle, onDeleteGroup, onDeleteItem, styles }: {
-  group: any;
-  isExpanded: boolean;
-  onToggle: (key: string) => void;
-  onDeleteGroup: (group: any) => void;
-  onDeleteItem: (item: any) => void;
-  styles: any;
-}) => {
-  return (
-    <View key={group.key}>
-      {/* 聚合项（两行布局） */}
-      <TouchableOpacity style={styles.itemRow}
-        activeOpacity={0.7} onPress={() => onToggle(group.key)}
-        onLongPress={() => onDeleteGroup(group)}
-        delayLongPress={500}
-      >
-        <View style={styles.itemLeft}>
-          <Text style={styles.itemModel}>
-            {isExpanded ? '▼' : '▶'} {group.model}
-          </Text>
-          <Text style={styles.itemBatch}>
-            版本: {group.version || '-'}
-          </Text>
-        </View>
-        <View style={styles.itemRight}>
-          <Text style={styles.itemQty}>
-            {group.totalQuantity.toLocaleString()}
-          </Text>
-        </View>
-      </TouchableOpacity>
+const RecordItem = React.memo(
+  ({
+    group,
+    isExpanded,
+    onToggle,
+    onDeleteGroup,
+    onDeleteItem,
+    styles,
+  }: {
+    group: any;
+    isExpanded: boolean;
+    onToggle: (key: string) => void;
+    onDeleteGroup: (group: any) => void;
+    onDeleteItem: (item: any) => void;
+    styles: any;
+  }) => {
+    return (
+      <View key={group.key}>
+        {/* 聚合项（两行布局） */}
+        <TouchableOpacity
+          style={styles.itemRow}
+          activeOpacity={0.7}
+          onPress={() => onToggle(group.key)}
+          onLongPress={() => onDeleteGroup(group)}
+          delayLongPress={500}
+        >
+          <View style={styles.itemLeft}>
+            <Text style={styles.itemModel}>
+              {isExpanded ? '▼' : '▶'} {group.model}
+            </Text>
+            <Text style={styles.itemBatch}>版本: {group.version || '-'}</Text>
+          </View>
+          <View style={styles.itemRight}>
+            <Text style={styles.itemQty}>{group.totalQuantity.toLocaleString()}</Text>
+          </View>
+        </TouchableOpacity>
 
-      {/* 展开的明细 */}
-      {isExpanded && (
-        <View style={styles.detailsContainer}>
-          {group.items.map((item: any) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.detailItem}
-              onLongPress={() => onDeleteItem(item)}
-              delayLongPress={500}
-            >
-              <Text style={styles.detailText}>
-                批次: {item.batch || '-'}  |  生产日期: {item.productionDate || '-'}  |  数量: {parseInt(item.quantity, 10) || 0} PCS
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}, (prevProps, nextProps) => {
-  // 自定义比较函数：只有关键属性变化时才重新渲染
-  return (
-    prevProps.group.model === nextProps.group.model &&
-    prevProps.group.version === nextProps.group.version &&
-    prevProps.group.totalQuantity === nextProps.group.totalQuantity &&
-    prevProps.group.boxCount === nextProps.group.boxCount &&
-    prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.group.items.length === nextProps.group.items.length
-  );
-});
+        {/* 展开的明细 */}
+        {isExpanded && (
+          <View style={styles.detailsContainer}>
+            {group.items.map((item: any) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.detailItem}
+                onLongPress={() => onDeleteItem(item)}
+                delayLongPress={500}
+              >
+                <Text style={styles.detailText}>
+                  批次: {item.batch || '-'} | 生产日期: {item.productionDate || '-'} | 数量:{' '}
+                  {parseInt(item.quantity, 10) || 0} PCS
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 自定义比较函数：只有关键属性变化时才重新渲染
+    return (
+      prevProps.group.model === nextProps.group.model &&
+      prevProps.group.version === nextProps.group.version &&
+      prevProps.group.totalQuantity === nextProps.group.totalQuantity &&
+      prevProps.group.boxCount === nextProps.group.boxCount &&
+      prevProps.isExpanded === nextProps.isExpanded &&
+      prevProps.group.items.length === nextProps.group.items.length
+    );
+  }
+);
 
 export default function PDAScanScreen() {
   const { theme, isDark } = useTheme();
@@ -193,14 +203,17 @@ export default function PDAScanScreen() {
     }, delay);
   }, []);
 
-  useEffect(() => () => {
-    if (focusTimerRef.current) {
-      clearTimeout(focusTimerRef.current);
-    }
-    if (autoSubmitTimerRef.current) {
-      clearTimeout(autoSubmitTimerRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+      }
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!showWarehousePicker) {
@@ -254,7 +267,7 @@ export default function PDAScanScreen() {
                 model: parsed.model,
                 batch: parsed.batch,
                 warehouseId,
-                warehouseName
+                warehouseName,
               });
 
               if (!orderNo || typeof orderNo !== 'string' || orderNo.trim() === '') {
@@ -266,7 +279,7 @@ export default function PDAScanScreen() {
                   warehouseId,
                   warehouseName,
                   currentWarehouse,
-                  parsed
+                  parsed,
                 });
                 throw new Error('仓库ID无效');
               }
@@ -308,7 +321,7 @@ export default function PDAScanScreen() {
               console.log('[ScanQueue] 判断是否需要刷新:', {
                 itemOrderNo: orderNo,
                 pageOrderNo: orderNoRef.current,
-                shouldRefresh: orderNo === orderNoRef.current
+                shouldRefresh: orderNo === orderNoRef.current,
               });
 
               if (orderNo === orderNoRef.current) {
@@ -362,9 +375,12 @@ export default function PDAScanScreen() {
         let warehouse: Warehouse | null = null;
         const savedWarehouse = await AsyncStorage.getItem(STORAGE_KEYS.GLOBAL_WAREHOUSE);
         if (savedWarehouse) {
-          const saved = safeJsonParseNullable<Warehouse>(savedWarehouse, 'outbound.globalWarehouse');
+          const saved = safeJsonParseNullable<Warehouse>(
+            savedWarehouse,
+            'outbound.globalWarehouse'
+          );
           // 确保仓库仍然存在
-          if (saved && list.find(w => w.id === saved.id)) {
+          if (saved && list.find((w) => w.id === saved.id)) {
             warehouse = saved;
           }
         }
@@ -401,9 +417,11 @@ export default function PDAScanScreen() {
           clearTimeout(autoSubmitTimerRef.current);
         }
         // 等待 init 完成，清理订阅
-        cleanupPromise.then(cleanup => {
-          if (cleanup) cleanup();
-        }).catch(console.error);
+        cleanupPromise
+          .then((cleanup) => {
+            if (cleanup) cleanup();
+          })
+          .catch(console.error);
       };
     }, [focusScannerInput])
   );
@@ -428,7 +446,7 @@ export default function PDAScanScreen() {
 
         // 3. 检查订单的仓库是否存在（使用传入的仓库列表，避免依赖状态）
         const list = warehouseList || warehouses;
-        const warehouse = list.find(w => w.id === order.warehouse_id);
+        const warehouse = list.find((w) => w.id === order.warehouse_id);
         if (!warehouse) {
           console.log('[loadOutboundState] 订单的仓库已不存在，清空订单号');
           Alert.alert('提示', '订单所属的仓库已被删除，订单号已清空');
@@ -498,7 +516,7 @@ export default function PDAScanScreen() {
   // 加载订单物料（从数据库加载已保存的记录）
   const loadOrderMaterials = async (no: string, explicitWarehouseId?: string) => {
     // 🔥 优先使用显式传入的 warehouseId（解决闭包问题）
-    const warehouseId = explicitWarehouseId || (currentWarehouse?.id);
+    const warehouseId = explicitWarehouseId || currentWarehouse?.id;
 
     // 确保仓库ID有效
     if (!warehouseId || typeof warehouseId !== 'string' || warehouseId.trim() === '') {
@@ -514,230 +532,262 @@ export default function PDAScanScreen() {
 
     const list = await searchMaterials({
       exactOrderNo: no.trim(),
-      warehouse_id: warehouseId.trim()
+      warehouse_id: warehouseId.trim(),
     });
     setMaterialCount(list.length);
     // 加载全部数据用于聚合，显示时限制10行
-    const materials = list.slice().reverse().map(m => ({
-      id: m.id,
-      model: m.model,
-      batch: m.batch,
-      quantity: String(m.quantity),
-      scannedAt: new Date(m.scanned_at),
-      version: m.version,
-      traceNo: m.traceNo,
-      sourceNo: m.sourceNo,
-      package: m.package,
-      productionDate: m.productionDate,
-      customFields: m.customFields,
-    }));
+    const materials = list
+      .slice()
+      .reverse()
+      .map((m) => ({
+        id: m.id,
+        model: m.model,
+        batch: m.batch,
+        quantity: String(m.quantity),
+        scannedAt: new Date(m.scanned_at),
+        version: m.version,
+        traceNo: m.traceNo,
+        sourceNo: m.sourceNo,
+        package: m.package,
+        productionDate: m.productionDate,
+        customFields: m.customFields,
+      }));
     setScanRecords(materials);
   };
 
   // 处理扫描（带参数版本）
-  const processScan = useCallback(async (code: string) => {
-    console.log('[processScan] 开始处理扫码:', code);
-    console.log('[processScan] 当前订单号:', orderNo);
-    console.log('[processScan] 当前仓库:', currentWarehouse ? currentWarehouse.name : 'null');
+  const processScan = useCallback(
+    async (code: string) => {
+      console.log('[processScan] 开始处理扫码:', code);
+      console.log('[processScan] 当前订单号:', orderNo);
+      console.log('[processScan] 当前仓库:', currentWarehouse ? currentWarehouse.name : 'null');
 
-    if (!code || processingRef.current) return;
+      if (!code || processingRef.current) return;
 
-    // 如果当前没有订单号，扫描内容必须是订单号格式
-    if (!orderNo && !ORDER_NO_REGEX.test(code)) {
-      showToast('请先扫描订单\n格式: IO-年-月-日-序号', 'error');
-      feedbackError();
-      return;
-    }
+      // 如果当前没有订单号，扫描内容必须是订单号格式
+      if (!orderNo && !ORDER_NO_REGEX.test(code)) {
+        showToast('请先扫描订单\n格式: IO-年-月-日-序号', 'error');
+        feedbackError();
+        return;
+      }
 
-    processingRef.current = true;
+      processingRef.current = true;
 
-    try {
-      // 判断是否是订单号格式
-      if (ORDER_NO_REGEX.test(code)) {
-        // 确保仓库已加载
+      try {
+        // 判断是否是订单号格式
+        if (ORDER_NO_REGEX.test(code)) {
+          // 确保仓库已加载
+          if (!currentWarehouse) {
+            showToast('请先选择仓库', 'error');
+            feedbackError();
+            return;
+          }
+
+          // 确保仓库ID有效
+          if (
+            !currentWarehouse.id ||
+            typeof currentWarehouse.id !== 'string' ||
+            currentWarehouse.id.trim() === ''
+          ) {
+            showToast('仓库信息无效，请重新选择仓库', 'error');
+            feedbackError();
+            return;
+          }
+
+          // 切换/新建订单
+          const existing = await getOrder(code);
+          setScanRecords([]); // 清空当前列表
+          setMaterialCount(0);
+          setOrderNo(code);
+          // 保存订单号到持久化存储
+          AsyncStorage.setItem(STORAGE_KEYS.OUTBOUND_ORDER_NO, code);
+
+          if (existing) {
+            await loadOrderMaterials(code);
+            showToast(`切换订单: ${code}`, 'warning');
+            feedbackSwitchOrder();
+          } else {
+            // 立即创建订单到数据库，防止退出页面后订单号丢失
+            await upsertOrder(code, undefined, {
+              id: currentWarehouse.id,
+              name: currentWarehouse.name,
+            });
+            showToast('新订单', 'success');
+            feedbackNewOrder();
+          }
+          return;
+        }
+
+        // 物料扫描
+        if (!orderNo) {
+          showToast('请先扫描订单', 'warning');
+          feedbackWarning();
+          return;
+        }
+
         if (!currentWarehouse) {
-          showToast('请先选择仓库', 'error');
-          feedbackError();
+          showToast('请选择仓库', 'warning');
+          feedbackWarning();
+          setShowWarehousePicker(true);
           return;
         }
 
         // 确保仓库ID有效
-        if (!currentWarehouse.id || typeof currentWarehouse.id !== 'string' || currentWarehouse.id.trim() === '') {
+        if (
+          !currentWarehouse.id ||
+          typeof currentWarehouse.id !== 'string' ||
+          currentWarehouse.id.trim() === ''
+        ) {
           showToast('仓库信息无效，请重新选择仓库', 'error');
           feedbackError();
           return;
         }
 
-        // 切换/新建订单
-        const existing = await getOrder(code);
-        setScanRecords([]); // 清空当前列表
-        setMaterialCount(0);
-        setOrderNo(code);
-        // 保存订单号到持久化存储
-        AsyncStorage.setItem(STORAGE_KEYS.OUTBOUND_ORDER_NO, code);
+        // 解析
+        let parsed: {
+          model: string;
+          batch: string;
+          quantity: string;
+          traceNo?: string;
+          sourceNo?: string;
+          package?: string;
+          version?: string;
+          productionDate?: string;
+          separator?: string;
+        } | null = null;
 
-        if (existing) {
-          await loadOrderMaterials(code);
-          showToast(`切换订单: ${code}`, 'warning');
-          feedbackSwitchOrder();
-        } else {
-          // 立即创建订单到数据库，防止退出页面后订单号丢失
-          await upsertOrder(code, undefined, { id: currentWarehouse.id, name: currentWarehouse.name });
-          showToast('新订单', 'success');
-          feedbackNewOrder();
+        // 保存扫码时使用的分隔符和规则名称
+        let separator = ',';
+        let ruleName = '';
+        let customFields: Record<string, string> = {};
+
+        try {
+          const rule = await detectRule(code);
+          if (rule) {
+            separator = rule.separator || ',';
+            ruleName = rule.name || '';
+            const { standardFields, customFields: parsedCustomFields } = parseWithRule(code, rule);
+            parsed = {
+              model: standardFields.model || '',
+              batch: standardFields.batch || '',
+              quantity: standardFields.quantity || '',
+              traceNo: standardFields.traceNo,
+              sourceNo: standardFields.sourceNo,
+              package: standardFields.package,
+              version: standardFields.version,
+              productionDate: standardFields.productionDate,
+            };
+            customFields = parsedCustomFields || {};
+          }
+          // 静默失败，走兜底逻辑 parseQRCodeSync
+        } catch (error) {
+          console.warn('[扫码出库] 规则解析失败，使用兜底解析:', error);
         }
-        return;
-      }
 
-      // 物料扫描
-      if (!orderNo) {
-        showToast('请先扫描订单', 'warning');
-        feedbackWarning();
-        return;
-      }
-
-      if (!currentWarehouse) {
-        showToast('请选择仓库', 'warning');
-        feedbackWarning();
-        setShowWarehousePicker(true);
-        return;
-      }
-
-      // 确保仓库ID有效
-      if (!currentWarehouse.id || typeof currentWarehouse.id !== 'string' || currentWarehouse.id.trim() === '') {
-        showToast('仓库信息无效，请重新选择仓库', 'error');
-        feedbackError();
-        return;
-      }
-
-      // 解析
-      let parsed: {
-        model: string;
-        batch: string;
-        quantity: string;
-        traceNo?: string;
-        sourceNo?: string;
-        package?: string;
-        version?: string;
-        productionDate?: string;
-        separator?: string;
-      } | null = null;
-
-      // 保存扫码时使用的分隔符和规则名称
-      let separator = ',';
-      let ruleName = '';
-      let customFields: Record<string, string> = {};
-
-      try {
-        const rule = await detectRule(code);
-        if (rule) {
-          separator = rule.separator || ',';
-          ruleName = rule.name || '';
-          const { standardFields, customFields: parsedCustomFields } = parseWithRule(code, rule);
-          parsed = {
-            model: standardFields.model || '',
-            batch: standardFields.batch || '',
-            quantity: standardFields.quantity || '',
-            traceNo: standardFields.traceNo,
-            sourceNo: standardFields.sourceNo,
-            package: standardFields.package,
-            version: standardFields.version,
-            productionDate: standardFields.productionDate,
-          };
-          customFields = parsedCustomFields || {};
+        if (!parsed) {
+          // 兜底：使用 qrcodeParser 的同步解析（不依赖数据库）
+          const fallback = parseQRCodeSync(code);
+          if (fallback) {
+            parsed = {
+              model: fallback.model,
+              batch: fallback.batch,
+              quantity: fallback.quantity,
+              traceNo: fallback.traceNo,
+              sourceNo: fallback.sourceNo,
+              package: fallback.package,
+              version: fallback.version,
+              productionDate: fallback.productionDate,
+            };
+          }
         }
-        // 静默失败，走兜底逻辑 parseQRCodeSync
-      } catch (e) {}
 
-      if (!parsed) {
-        // 兜底：使用 qrcodeParser 的同步解析（不依赖数据库）
-        const fallback = parseQRCodeSync(code);
-        if (fallback) {
-          parsed = {
-            model: fallback.model,
-            batch: fallback.batch,
-            quantity: fallback.quantity,
-            traceNo: fallback.traceNo,
-            sourceNo: fallback.sourceNo,
-            package: fallback.package,
-            version: fallback.version,
-            productionDate: fallback.productionDate,
-          };
-        }
-      }
-
-      if (!parsed) {
-        showToast('无法识别', 'error');
-        feedbackError();
-        return;
-      }
-
-      // 检查重复 + 查找存货编码（并行查询，性能优化）
-      console.log('[扫码出库] 开始检查重复和查找存货编码，参数:', { orderNo, model: parsed.model, batch: parsed.batch, traceNo: parsed.traceNo, quantity: parsed.quantity });
-      const [check, inventoryCode] = await Promise.all([
-        checkMaterialExists(orderNo, parsed.model, parsed.batch, parsed.sourceNo, parsed.traceNo, parsed.quantity, currentWarehouse.id),
-        getInventoryCodeByModel(parsed.model || ''),
-      ]);
-      console.log('[扫码出库] 重复检查结果:', check);
-      console.log('[扫码出库] 存货编码:', inventoryCode);
-
-      if (check.material) {
-        showToast('⚠️ 该物料已扫码，请勿重复', 'warning');
-        feedbackDuplicate();
-        return;
-      }
-
-      // 添加到队列（而不是直接写入数据库）
-      const queueItem = scanQueue.add(code, {
-        orderNo,
-        model: parsed.model || '',
-        batch: parsed.batch || '',
-        quantity: parsed.quantity || '1',
-        traceNo: parsed.traceNo,
-        sourceNo: parsed.sourceNo,
-        package: parsed.package,
-        version: parsed.version,
-        productionDate: parsed.productionDate,
-        separator,
-        ruleName,
-        customFields,
-        inventoryCode: inventoryCode || '',
-        warehouseId: currentWarehouse.id,
-        warehouseName: currentWarehouse.name,
-      });
-
-      console.log('[扫码出库] 已添加到队列，队列项ID:', queueItem.id);
-      console.log('[扫码出库] 队列状态:', scanQueue.getStats());
-      showToast(`${parsed.model} +1`, 'success');
-      feedbackSuccess();
-
-    } catch (e) {
-      console.error('[扫码出库] 处理失败:', e);
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      showToast(`错误: ${errorMessage}`, 'error');
-      feedbackError();
-    } finally {
-      // 给扫码枪留一个很短的输入窗口，避免上一条还在处理时下一条被吞掉。
-      setTimeout(() => {
-        processingRef.current = false;
-
-        const nextPendingCode = pendingScanCodesRef.current.shift();
-        if (nextPendingCode) {
-          processScan(nextPendingCode);
+        if (!parsed) {
+          showToast('无法识别', 'error');
+          feedbackError();
           return;
         }
 
-        focusScannerInput(0);
-      }, 170);
-    }
-  }, [currentWarehouse, focusScannerInput, orderNo]);
+        // 检查重复 + 查找存货编码（并行查询，性能优化）
+        console.log('[扫码出库] 开始检查重复和查找存货编码，参数:', {
+          orderNo,
+          model: parsed.model,
+          batch: parsed.batch,
+          traceNo: parsed.traceNo,
+          quantity: parsed.quantity,
+        });
+        const [check, inventoryCode] = await Promise.all([
+          checkMaterialExists(
+            orderNo,
+            parsed.model,
+            parsed.batch,
+            parsed.sourceNo,
+            parsed.traceNo,
+            parsed.quantity,
+            currentWarehouse.id
+          ),
+          getInventoryCodeByModel(parsed.model || ''),
+        ]);
+        console.log('[扫码出库] 重复检查结果:', check);
+        console.log('[扫码出库] 存货编码:', inventoryCode);
+
+        if (check.material) {
+          showToast('⚠️ 该物料已扫码，请勿重复', 'warning');
+          feedbackDuplicate();
+          return;
+        }
+
+        // 添加到队列（而不是直接写入数据库）
+        const queueItem = scanQueue.add(code, {
+          orderNo,
+          model: parsed.model || '',
+          batch: parsed.batch || '',
+          quantity: parsed.quantity || '1',
+          traceNo: parsed.traceNo,
+          sourceNo: parsed.sourceNo,
+          package: parsed.package,
+          version: parsed.version,
+          productionDate: parsed.productionDate,
+          separator,
+          ruleName,
+          customFields,
+          inventoryCode: inventoryCode || '',
+          warehouseId: currentWarehouse.id,
+          warehouseName: currentWarehouse.name,
+        });
+
+        console.log('[扫码出库] 已添加到队列，队列项ID:', queueItem.id);
+        console.log('[扫码出库] 队列状态:', scanQueue.getStats());
+        showToast(`${parsed.model} +1`, 'success');
+        feedbackSuccess();
+      } catch (e) {
+        console.error('[扫码出库] 处理失败:', e);
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        showToast(`错误: ${errorMessage}`, 'error');
+        feedbackError();
+      } finally {
+        // 给扫码枪留一个很短的输入窗口，避免上一条还在处理时下一条被吞掉。
+        setTimeout(() => {
+          processingRef.current = false;
+
+          const nextPendingCode = pendingScanCodesRef.current.shift();
+          if (nextPendingCode) {
+            processScan(nextPendingCode);
+            return;
+          }
+
+          focusScannerInput(0);
+        }, 170);
+      }
+    },
+    [currentWarehouse, focusScannerInput, orderNo]
+  );
 
   // 聚合物料（按型号+版本）
   const aggregateMaterials = useMemo(() => {
     const groups: AggregatedGroup[] = [];
     const map = new Map<string, AggregatedGroup>();
 
-    scanRecords.forEach(item => {
+    scanRecords.forEach((item) => {
       const key = `${item.model}_${item.version || ''}`;
 
       if (!map.has(key)) {
@@ -760,35 +810,41 @@ export default function PDAScanScreen() {
     return Array.from(map.values());
   }, [scanRecords]);
 
-  const aggregateTotals = useMemo(() => ({
-    modelCount: aggregateMaterials.length,
-    totalQuantity: aggregateMaterials.reduce((sum, group) => sum + group.totalQuantity, 0),
-  }), [aggregateMaterials]);
+  const aggregateTotals = useMemo(
+    () => ({
+      modelCount: aggregateMaterials.length,
+      totalQuantity: aggregateMaterials.reduce((sum, group) => sum + group.totalQuantity, 0),
+    }),
+    [aggregateMaterials]
+  );
 
   const outboundListState = useMemo(
     () => Array.from(expandedGroups).sort().join('|'),
     [expandedGroups]
   );
 
-  const renderAggregatedGroup = useCallback(({ item }: { item: AggregatedGroup }) => {
-    const isExpanded = expandedGroups.has(item.key);
-    return (
-      <RecordItem
-        group={item}
-        isExpanded={isExpanded}
-        onToggle={toggleExpand}
-        onDeleteGroup={handleDeleteGroup}
-        onDeleteItem={handleDeleteItem}
-        styles={styles}
-      />
-    );
-  }, [expandedGroups, orderNo, styles]);
+  const renderAggregatedGroup = useCallback(
+    ({ item }: { item: AggregatedGroup }) => {
+      const isExpanded = expandedGroups.has(item.key);
+      return (
+        <RecordItem
+          group={item}
+          isExpanded={isExpanded}
+          onToggle={toggleExpand}
+          onDeleteGroup={handleDeleteGroup}
+          onDeleteItem={handleDeleteItem}
+          styles={styles}
+        />
+      );
+    },
+    [expandedGroups, orderNo, styles]
+  );
 
   const aggregatedGroupKeyExtractor = useCallback((item: AggregatedGroup) => item.key, []);
 
   // 切换展开/折叠
   const toggleExpand = (key: string) => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
@@ -800,11 +856,9 @@ export default function PDAScanScreen() {
   };
 
   // 删除聚合组（同型号/版本的所有记录）
-  const handleDeleteGroup = useCallback((group: AggregatedGroup) => {
-    Alert.alert(
-      '确认删除',
-      `确定要删除 ${group.model} 的所有 ${group.boxCount} 条物料吗？`,
-      [
+  const handleDeleteGroup = useCallback(
+    (group: AggregatedGroup) => {
+      Alert.alert('确认删除', `确定要删除 ${group.model} 的所有 ${group.boxCount} 条物料吗？`, [
         { text: '取消', style: 'cancel' },
         {
           text: '删除',
@@ -812,7 +866,7 @@ export default function PDAScanScreen() {
           onPress: async () => {
             try {
               // 删除所有物料
-              await Promise.all(group.items.map(item => deleteMaterial(item.id)));
+              await Promise.all(group.items.map((item) => deleteMaterial(item.id)));
               // 从数据库重新加载列表
               if (orderNo) {
                 await loadOrderMaterials(orderNo);
@@ -824,16 +878,15 @@ export default function PDAScanScreen() {
             }
           },
         },
-      ]
-    );
-  }, [orderNo]);
+      ]);
+    },
+    [orderNo]
+  );
 
   // 删除单个物料
-  const handleDeleteItem = useCallback((item: MaterialItem) => {
-    Alert.alert(
-      '确认删除',
-      `确定要删除这条物料吗？`,
-      [
+  const handleDeleteItem = useCallback(
+    (item: MaterialItem) => {
+      Alert.alert('确认删除', `确定要删除这条物料吗？`, [
         { text: '取消', style: 'cancel' },
         {
           text: '删除',
@@ -852,9 +905,10 @@ export default function PDAScanScreen() {
             }
           },
         },
-      ]
-    );
-  }, [orderNo]);
+      ]);
+    },
+    [orderNo]
+  );
 
   const normalizeScannerInput = useCallback((rawText: string): string => {
     return rawText
@@ -864,55 +918,61 @@ export default function PDAScanScreen() {
       .replace(/[^A-Za-z0-9]+$/, '');
   }, []);
 
-  const flushScannerInput = useCallback((rawText?: string) => {
-    const sourceText = typeof rawText === 'string' ? rawText : liveInputValueRef.current;
-    const code = normalizeScannerInput(sourceText);
+  const flushScannerInput = useCallback(
+    (rawText?: string) => {
+      const sourceText = typeof rawText === 'string' ? rawText : liveInputValueRef.current;
+      const code = normalizeScannerInput(sourceText);
 
-    liveInputValueRef.current = '';
-    setInputValue('');
+      liveInputValueRef.current = '';
+      setInputValue('');
 
-    if (!code) {
-      if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
-        focusScannerInput(0);
+      if (!code) {
+        if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
+          focusScannerInput(0);
+        }
+        return;
       }
-      return;
-    }
 
-    if (!ORDER_NO_REGEX.test(code) && !isQRCode(code)) {
-      if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
-        focusScannerInput(0);
+      if (!ORDER_NO_REGEX.test(code) && !isQRCode(code)) {
+        if (!processingRef.current && pendingScanCodesRef.current.length === 0) {
+          focusScannerInput(0);
+        }
+        return;
       }
-      return;
-    }
 
-    if (processingRef.current) {
-      pendingScanCodesRef.current.push(code);
-      return;
-    }
+      if (processingRef.current) {
+        pendingScanCodesRef.current.push(code);
+        return;
+      }
 
-    processScan(code);
-  }, [focusScannerInput, normalizeScannerInput, processScan]);
+      processScan(code);
+    },
+    [focusScannerInput, normalizeScannerInput, processScan]
+  );
 
   // 输入变化时自动检测并触发（扫码器逐字符输入，需要防抖检测完成）
-  const handleInputChange = useCallback((text: string) => {
-    // 清除之前的定时器（每次输入都重置）
-    if (autoSubmitTimerRef.current) {
-      clearTimeout(autoSubmitTimerRef.current);
-      autoSubmitTimerRef.current = null;
-    }
-
-    liveInputValueRef.current = text;
-    setInputValue(text);
-
-    // 如果当前有输入内容，启动定时器检测扫码完成
-    if (text.length > 0) {
-      autoSubmitTimerRef.current = setTimeout(() => {
+  const handleInputChange = useCallback(
+    (text: string) => {
+      // 清除之前的定时器（每次输入都重置）
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
         autoSubmitTimerRef.current = null;
-        flushScannerInput(text);
-      }, 150); // 150ms 防抖，等待扫码器输入完成
-      return;
-    }
-  }, [flushScannerInput]);
+      }
+
+      liveInputValueRef.current = text;
+      setInputValue(text);
+
+      // 如果当前有输入内容，启动定时器检测扫码完成
+      if (text.length > 0) {
+        autoSubmitTimerRef.current = setTimeout(() => {
+          autoSubmitTimerRef.current = null;
+          flushScannerInput(text);
+        }, 150); // 150ms 防抖，等待扫码器输入完成
+        return;
+      }
+    },
+    [flushScannerInput]
+  );
 
   // 扫码完成确认（焦点录入模式：用户手动按回车）
   const handleSubmitEditing = useCallback(() => {
@@ -937,7 +997,7 @@ export default function PDAScanScreen() {
     setMaterialCount(0);
     setScanRecords([]);
     setExpandedGroups(new Set());
-    
+
     // 清理持久化存储
     await AsyncStorage.removeItem(STORAGE_KEYS.OUTBOUND_ORDER_NO);
     await AsyncStorage.removeItem(STORAGE_KEYS.OUTBOUND_SCAN_RECORDS);
@@ -954,7 +1014,11 @@ export default function PDAScanScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+          >
             <Feather name="arrow-left" size={28} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>扫码出库</Text>
@@ -989,14 +1053,14 @@ export default function PDAScanScreen() {
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitEditing}
             onBlur={() => focusScannerInput(120)}
-            placeholder={orderNo ? "继续扫描物料" : "先扫描订单号"}
+            placeholder={orderNo ? '继续扫描物料' : '先扫描订单号'}
             placeholderTextColor={theme.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
             autoFocus={false}
             showSoftInputOnFocus={false}
           />
-          
+
           {/* Toast */}
           <ToastContainer />
         </View>
@@ -1006,7 +1070,8 @@ export default function PDAScanScreen() {
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>本单物料</Text>
             <Text style={styles.listCount}>
-              {aggregateTotals.modelCount} 型号 / {aggregateTotals.totalQuantity.toLocaleString()} PCS
+              {aggregateTotals.modelCount} 型号 / {aggregateTotals.totalQuantity.toLocaleString()}{' '}
+              PCS
             </Text>
           </View>
           <FlatList
@@ -1015,7 +1080,9 @@ export default function PDAScanScreen() {
             renderItem={renderAggregatedGroup}
             extraData={outboundListState}
             style={styles.list}
-            contentContainerStyle={scanRecords.length === 0 ? styles.listEmptyContent : styles.listContent}
+            contentContainerStyle={
+              scanRecords.length === 0 ? styles.listEmptyContent : styles.listContent
+            }
             initialNumToRender={12}
             maxToRenderPerBatch={16}
             windowSize={7}
@@ -1027,7 +1094,6 @@ export default function PDAScanScreen() {
               </View>
             }
           />
-
         </View>
 
         {/* 仓库选择器 */}
@@ -1035,17 +1101,24 @@ export default function PDAScanScreen() {
           <View style={styles.pickerOverlay}>
             <View style={styles.pickerBox}>
               <Text style={styles.pickerTitle}>选择仓库</Text>
-              {warehouses.map(wh => (
-                <TouchableOpacity key={wh.id}
-                  style={[styles.pickerItem, currentWarehouse?.id === wh.id && styles.pickerItemActive]}
-                  activeOpacity={0.7} onPress={() => selectWarehouse(wh)}
+              {warehouses.map((wh) => (
+                <TouchableOpacity
+                  key={wh.id}
+                  style={[
+                    styles.pickerItem,
+                    currentWarehouse?.id === wh.id && styles.pickerItemActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => selectWarehouse(wh)}
                 >
                   <Text style={styles.pickerItemText}>{wh.name}</Text>
-                  {currentWarehouse?.id === wh.id && <FontAwesome6 name="check" size={14} color={theme.primary} />}
+                  {currentWarehouse?.id === wh.id && (
+                    <FontAwesome6 name="check" size={14} color={theme.primary} />
+                  )}
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity 
-                style={styles.pickerClose} 
+              <TouchableOpacity
+                style={styles.pickerClose}
                 onPress={() => setShowWarehousePicker(false)}
               >
                 <Text style={styles.pickerCloseText}>关闭</Text>
@@ -1054,7 +1127,6 @@ export default function PDAScanScreen() {
           </View>
         )}
       </View>
-
     </Screen>
   );
 }

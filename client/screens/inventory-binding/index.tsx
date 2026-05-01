@@ -101,11 +101,14 @@ export default function InventoryBindingScreen() {
 
     // 检查存货编码是否已存在（按存货编码查重）
     const existingCode = bindings.find(
-      b => b.inventory_code === formData.inventory_code.trim() && 
-           (!editingBinding || b.id !== editingBinding.id)
+      (b) =>
+        b.inventory_code === formData.inventory_code.trim() &&
+        (!editingBinding || b.id !== editingBinding.id)
     );
     if (existingCode) {
-      alert.showWarning(`存货编码「${formData.inventory_code.trim()}」已存在\n\n请使用其他编码或编辑已有记录`);
+      alert.showWarning(
+        `存货编码「${formData.inventory_code.trim()}」已存在\n\n请使用其他编码或编辑已有记录`
+      );
       return;
     }
 
@@ -172,8 +175,13 @@ export default function InventoryBindingScreen() {
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
 
       // 跳过表头，从第二行开始
-      const bindingsToImport: Array<{ scan_model: string; inventory_code: string; supplier?: string; description?: string }> = [];
-      
+      const bindingsToImport: Array<{
+        scan_model: string;
+        inventory_code: string;
+        supplier?: string;
+        description?: string;
+      }> = [];
+
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (row && row.length >= 2 && row[0] && row[1]) {
@@ -193,31 +201,32 @@ export default function InventoryBindingScreen() {
       }
 
       // 按存货编码查重：获取已存在的存货编码
-      const existingCodes = new Set(bindings.map(b => b.inventory_code));
-      const duplicateCodes: string[] = [];
+      const existingCodes = new Set(bindings.map((b) => b.inventory_code));
+      const duplicateCodeSet = new Set<string>();
       const uniqueBindings: typeof bindingsToImport = [];
 
       for (const binding of bindingsToImport) {
         if (existingCodes.has(binding.inventory_code)) {
           // 记录重复的编码
-          if (!duplicateCodes.includes(binding.inventory_code)) {
-            duplicateCodes.push(binding.inventory_code);
-          }
+          duplicateCodeSet.add(binding.inventory_code);
         } else {
           // 记录不重复的，用于后续导入
           uniqueBindings.push(binding);
         }
       }
+      const duplicateCodes = [...duplicateCodeSet];
 
       if (uniqueBindings.length === 0) {
-        alert.showWarning(`所有存货编码均已存在\n\n重复编码：${duplicateCodes.slice(0, 5).join('、')}${duplicateCodes.length > 5 ? '...' : ''}`);
+        alert.showWarning(
+          `所有存货编码均已存在\n\n重复编码：${duplicateCodes.slice(0, 5).join('、')}${duplicateCodes.length > 5 ? '...' : ''}`
+        );
         setImporting(false);
         return;
       }
 
       // 批量导入（只导入不重复的）
       const importCount = await importInventoryBindings(uniqueBindings);
-      
+
       // 构建提示信息
       let message = `导入成功！\n新增 ${importCount} 条绑定`;
       if (duplicateCodes.length > 0) {
@@ -243,7 +252,7 @@ export default function InventoryBindingScreen() {
 
     try {
       const headers = ['型号', '存货编码', '供应商', '描述', '创建时间'];
-      const rows = bindings.map(b => [
+      const rows = bindings.map((b) => [
         b.scan_model,
         b.inventory_code,
         b.supplier || '',
@@ -256,13 +265,7 @@ export default function InventoryBindingScreen() {
       XLSX.utils.book_append_sheet(wb, ws, '物料绑定');
 
       // 设置列宽
-      ws['!cols'] = [
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 30 },
-        { wch: 12 },
-      ];
+      ws['!cols'] = [{ wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 30 }, { wch: 12 }];
 
       const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const fileName = `物料绑定_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.xlsx`;
@@ -298,12 +301,7 @@ export default function InventoryBindingScreen() {
       XLSX.utils.book_append_sheet(wb, ws, '物料绑定模板');
 
       // 设置列宽
-      ws['!cols'] = [
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 30 },
-      ];
+      ws['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 30 }];
 
       const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const fileName = `物料绑定导入模板.xlsx`;
@@ -341,10 +339,10 @@ export default function InventoryBindingScreen() {
           // 获取 Downloads 相册
           try {
             const albums = await MediaLibrary.getAlbumsAsync();
-            let downloadAlbum = albums.find((album: any) => 
-              album.title === 'Download' || album.title === 'Downloads'
+            let downloadAlbum = albums.find(
+              (album: any) => album.title === 'Download' || album.title === 'Downloads'
             );
-            
+
             if (!downloadAlbum) {
               downloadAlbum = await MediaLibrary.createAlbumAsync('Downloads', asset, false);
             } else {
@@ -359,18 +357,18 @@ export default function InventoryBindingScreen() {
             await Linking.openURL('content://downloads/all_downloads');
           } catch {
             try {
-              await Linking.openURL('content://com.android.providers.downloads.documents/root/downloads');
+              await Linking.openURL(
+                'content://com.android.providers.downloads.documents/root/downloads'
+              );
             } catch {
               // 都打不开就算了
             }
           }
 
-          alert.showSuccess(
-            '模板已保存到下载文件夹\n请在文件管理器中找到并打开\n（用于导入数据）'
-          );
+          alert.showSuccess('模板已保存到下载文件夹\n请在文件管理器中找到并打开\n（用于导入数据）');
         } catch (mediaError) {
           console.error('保存到下载文件夹失败:', mediaError);
-          
+
           // 备选方案：使用 Sharing
           if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(filePath, {
@@ -390,57 +388,77 @@ export default function InventoryBindingScreen() {
   };
 
   // 渲染单个绑定卡片
-  const renderBindingCard = useCallback(({ item: binding }: { item: InventoryBinding }) => (
-    <View style={styles.bindingCard}>
-      <View style={styles.bindingMain}>
-        <View style={styles.bindingInfo}>
-          {/* 型号 */}
-          <Text style={styles.bindingModel} numberOfLines={1}>{binding.scan_model}</Text>
-          {/* 编码 */}
-          <View style={styles.codeRow}>
-            <Feather name="arrow-right" size={10} color={theme.primary} />
-            <Text style={styles.bindingCode} numberOfLines={1}>{binding.inventory_code}</Text>
-          </View>
-          {/* 供应商 */}
-          {binding.supplier && (
-            <View style={styles.supplierRow}>
-              <Feather name="briefcase" size={10} color={theme.accent} />
-              <Text style={styles.supplierText} numberOfLines={1}>{binding.supplier}</Text>
+  const renderBindingCard = useCallback(
+    ({ item: binding }: { item: InventoryBinding }) => (
+      <View style={styles.bindingCard}>
+        <View style={styles.bindingMain}>
+          <View style={styles.bindingInfo}>
+            {/* 型号 */}
+            <Text style={styles.bindingModel} numberOfLines={1}>
+              {binding.scan_model}
+            </Text>
+            {/* 编码 */}
+            <View style={styles.codeRow}>
+              <Feather name="arrow-right" size={10} color={theme.primary} />
+              <Text style={styles.bindingCode} numberOfLines={1}>
+                {binding.inventory_code}
+              </Text>
             </View>
-          )}
-        </View>
-        
-        {/* 操作 */}
-        <View style={styles.actionColumn}>
-          <TouchableOpacity style={styles.iconBtn}
-            activeOpacity={0.7} onPress={() => handleOpenModal(binding)}
-          >
-            <Feather name="edit-2" size={14} color={theme.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}
-            activeOpacity={0.7} onPress={() => handleDelete(binding)}
-          >
-            <Feather name="trash-2" size={14} color={theme.error} />
-          </TouchableOpacity>
+            {/* 供应商 */}
+            {binding.supplier && (
+              <View style={styles.supplierRow}>
+                <Feather name="briefcase" size={10} color={theme.accent} />
+                <Text style={styles.supplierText} numberOfLines={1}>
+                  {binding.supplier}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* 操作 */}
+          <View style={styles.actionColumn}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              onPress={() => handleOpenModal(binding)}
+            >
+              <Feather name="edit-2" size={14} color={theme.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              onPress={() => handleDelete(binding)}
+            >
+              <Feather name="trash-2" size={14} color={theme.error} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
-  ), [theme, handleOpenModal, handleDelete]);
+    ),
+    [theme, handleOpenModal, handleDelete]
+  );
 
   // 空状态组件
-  const renderEmptyState = useCallback(() => (
-    <View style={styles.emptyState}>
-      <Feather name="hash" size={28} color={theme.textMuted} />
-      <Text style={styles.emptyTitle}>暂无绑定数据</Text>
-      <Text style={styles.emptyDesc}>添加型号与存货编码的对应关系</Text>
-    </View>
-  ), [theme]);
+  const renderEmptyState = useCallback(
+    () => (
+      <View style={styles.emptyState}>
+        <Feather name="hash" size={28} color={theme.textMuted} />
+        <Text style={styles.emptyTitle}>暂无绑定数据</Text>
+        <Text style={styles.emptyDesc}>添加型号与存货编码的对应关系</Text>
+      </View>
+    ),
+    [theme]
+  );
 
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       {/* 头部 */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+        >
           <Feather name="arrow-left" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
@@ -473,17 +491,26 @@ export default function InventoryBindingScreen() {
               </View>
 
               <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleExportTemplate} >
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.7}
+                  onPress={handleExportTemplate}
+                >
                   <Feather name="file-text" size={14} color={theme.textSecondary} />
                   <Text style={styles.actionBtnText}>模板</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleExportToExcel} >
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.7}
+                  onPress={handleExportToExcel}
+                >
                   <Feather name="download" size={14} color={theme.textSecondary} />
                   <Text style={styles.actionBtnText}>导出</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} 
-                  activeOpacity={0.7} onPress={handleImportFromExcel}
-                  
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnPrimary]}
+                  activeOpacity={0.7}
+                  onPress={handleImportFromExcel}
                 >
                   {importing ? (
                     <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
@@ -501,8 +528,10 @@ export default function InventoryBindingScreen() {
             <View style={styles.listSection}>
               <View style={styles.listHeader}>
                 <Text style={styles.listTitle}>型号编码绑定</Text>
-                <TouchableOpacity style={styles.addSmallBtn}
-                  activeOpacity={0.7} onPress={() => handleOpenModal()}
+                <TouchableOpacity
+                  style={styles.addSmallBtn}
+                  activeOpacity={0.7}
+                  onPress={() => handleOpenModal()}
                 >
                   <Feather name="plus" size={14} color={theme.primary} />
                   <Text style={styles.addSmallBtnText}>添加</Text>
@@ -526,80 +555,83 @@ export default function InventoryBindingScreen() {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingBinding ? '编辑绑定' : '添加绑定'}
-              </Text>
-              <TouchableOpacity style={styles.modalCloseBtn}
-                activeOpacity={0.7} onPress={() => setModalVisible(false)}
-              >
-                <Feather name="x" size={18} color={theme.textMuted} />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editingBinding ? '编辑绑定' : '添加绑定'}</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  activeOpacity={0.7}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Feather name="x" size={18} color={theme.textMuted} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.inputLabel}>扫描型号 <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                value={formData.scan_model}
-                onChangeText={(text) => setFormData({ ...formData, scan_model: text })}
-                placeholder="二维码解析后的型号"
-                placeholderTextColor={theme.textMuted}
-                
-              />
-            </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>
+                  扫描型号 <Text style={styles.required}>*</Text>
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.scan_model}
+                  onChangeText={(text) => setFormData({ ...formData, scan_model: text })}
+                  placeholder="二维码解析后的型号"
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.inputLabel}>存货编码 <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                value={formData.inventory_code}
-                onChangeText={(text) => setFormData({ ...formData, inventory_code: text })}
-                placeholder="ERP系统中的编码"
-                placeholderTextColor={theme.textMuted}
-                
-              />
-            </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>
+                  存货编码 <Text style={styles.required}>*</Text>
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.inventory_code}
+                  onChangeText={(text) => setFormData({ ...formData, inventory_code: text })}
+                  placeholder="ERP系统中的编码"
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.inputLabel}>供应商</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.supplier}
-                onChangeText={(text) => setFormData({ ...formData, supplier: text })}
-                placeholder="供应商名称（选填）"
-                placeholderTextColor={theme.textMuted}
-                
-              />
-            </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>供应商</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.supplier}
+                  onChangeText={(text) => setFormData({ ...formData, supplier: text })}
+                  placeholder="供应商名称（选填）"
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.inputLabel}>描述</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.description}
-                onChangeText={(text) => setFormData({ ...formData, description: text })}
-                placeholder="备注说明（选填）"
-                placeholderTextColor={theme.textMuted}
-                
-              />
-            </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>描述</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({ ...formData, description: text })}
+                  placeholder="备注说明（选填）"
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]}
-                activeOpacity={0.7} onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, styles.submitBtn]}
-                activeOpacity={0.7} onPress={handleSave}
-                
-              >
-                <Text style={styles.submitBtnText}>保存</Text>
-              </TouchableOpacity>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.cancelBtn]}
+                  activeOpacity={0.7}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={styles.cancelBtnText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.submitBtn]}
+                  activeOpacity={0.7}
+                  onPress={handleSave}
+                >
+                  <Text style={styles.submitBtnText}>保存</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
         </KeyboardAvoidingView>
       </Modal>
 

@@ -5,9 +5,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { APP_VERSION } from '@/constants/version';
-import { STORAGE_KEYS, ExportType, ExportCountData } from '@/constants/config';
-import { getISODateTime, getExportDateTime, formatDateTime } from './time';
+import { STORAGE_KEYS, ExportType, ExportCountData, SyncConfig } from '@/constants/config';
+import { getISODateTime, getExportDateTime, formatDateTime, getTodayLocal } from './time';
 import { parseQuantity } from './quantity';
+import { safeJsonParseNullable } from './json';
 
 // 使用 any 绕过类型检查
 const FS = FileSystem as any;
@@ -15,12 +16,13 @@ const FS = FileSystem as any;
 // 重新导出 STORAGE_KEYS，供其他模块使用
 export { STORAGE_KEYS };
 
-  // 安装 ID 存储键（已废弃，现在改用数据库存储）
+// 安装 ID 存储键（已废弃，现在改用数据库存储）
 const INSTALL_ID_KEY = '@warehouse_app_install_id';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitializing = false;
 let initPromise: Promise<void> | null = null;
+let idCounter = 0;
 
 // 检测是否为 Web 平台
 const isWebPlatform = Platform.OS === 'web';
@@ -30,8 +32,8 @@ const CURRENT_DATA_VERSION = 12;
 
 // 匹配条件接口（简化版：指定位置字段包含指定关键字）
 export interface MatchCondition {
-  fieldIndex: number;           // 字段位置（从0开始）
-  keyword: string;              // 匹配关键字（字段值包含此关键字即匹配）
+  fieldIndex: number; // 字段位置（从0开始）
+  keyword: string; // 匹配关键字（字段值包含此关键字即匹配）
 }
 
 export type FieldPrefixes = Record<string, string>;
@@ -39,14 +41,14 @@ export type FieldPrefixes = Record<string, string>;
 // 二维码解析规则接口
 export interface QRCodeRule {
   id: string;
-  name: string;           // 厂家/规则名称，如"极海半导体"
-  description: string;    // 规则描述
-  separator: string;      // 分隔符，如 "/"、","、"*"等
-  fieldOrder: string[];   // 字段顺序，标准字段用原名称（如"model"），自定义字段用"custom:字段ID"格式
+  name: string; // 厂家/规则名称，如"极海半导体"
+  description: string; // 规则描述
+  separator: string; // 分隔符，如 "/"、","、"*"等
+  fieldOrder: string[]; // 字段顺序，标准字段用原名称（如"model"），自定义字段用"custom:字段ID"格式
   customFieldIds?: string[]; // 关联的自定义字段ID列表（已弃用，保留兼容性）
   fieldPrefixes?: FieldPrefixes; // 字段前缀配置，key 与 fieldOrder 保持一致
-  isActive: boolean;      // 是否启用
-  supplierName?: string;  // 供应商名称（可选）
+  isActive: boolean; // 是否启用
+  supplierName?: string; // 供应商名称（可选）
   matchConditions?: MatchCondition[]; // 识别条件（可选，用于区分相同分隔符和字段数的规则）
   created_at: string;
   updated_at: string;
@@ -55,7 +57,7 @@ export interface QRCodeRule {
 // 字段定义（用于显示）
 export const FIELD_LABELS: Record<string, string> = {
   model: '型号',
-  batch: '批次', 
+  batch: '批次',
   package: '封装',
   version: '版本号',
   quantity: '数量',
@@ -67,20 +69,20 @@ export const FIELD_LABELS: Record<string, string> = {
 // 固定字段顺序（极海半导体标准格式：型号/批次/封装/版本/数量/生产日期/追踪码/箱号）
 // 这个顺序是固定的，无论用户用什么分隔符，都会按这个顺序提取值
 export const STANDARD_FIELD_ORDER = [
-  'model',          // 0: 型号
-  'batch',          // 1: 批次
-  'package',        // 2: 封装
-  'version',        // 3: 版本号
-  'quantity',       // 4: 数量
+  'model', // 0: 型号
+  'batch', // 1: 批次
+  'package', // 2: 封装
+  'version', // 3: 版本号
+  'quantity', // 4: 数量
   'productionDate', // 5: 生产日期
-  'traceNo',        // 6: 追踪码
-  'sourceNo',       // 7: 箱号
+  'traceNo', // 6: 追踪码
+  'sourceNo', // 7: 箱号
 ];
 
 // 可用字段列表
 export const AVAILABLE_FIELDS = [
   'model',
-  'batch', 
+  'batch',
   'package',
   'version',
   'quantity',
@@ -107,11 +109,11 @@ export const createCustomFieldKey = (fieldId: string): string => {
 // 自定义字段定义接口
 export interface CustomField {
   id: string;
-  name: string;           // 字段名称（显示名称）
-  type: 'text' | 'number' | 'date' | 'select';  // 字段类型
-  required: boolean;      // 是否必填
-  options?: string[];     // 选择类型的选项
-  sortOrder: number;      // 排序顺序
+  name: string; // 字段名称（显示名称）
+  type: 'text' | 'number' | 'date' | 'select'; // 字段类型
+  required: boolean; // 是否必填
+  options?: string[]; // 选择类型的选项
+  sortOrder: number; // 排序顺序
   created_at: string;
   updated_at: string;
 }
@@ -122,33 +124,33 @@ export interface MaterialRecord {
   order_no: string;
   customer_name: string;
   operation_type: 'inbound' | 'outbound' | 'inventory';
-  rule_id?: string;       // 使用的规则ID
-  rule_name?: string;     // 使用的规则名称
+  rule_id?: string; // 使用的规则ID
+  rule_name?: string; // 使用的规则名称
   // 核心字段
-  model: string;          // 型号
-  batch: string;          // 批次
-  quantity: number;       // 未拆包时为原始数量，拆包后为累计发货数量（数据库是 INTEGER）
+  model: string; // 型号
+  batch: string; // 批次
+  quantity: number; // 未拆包时为原始数量，拆包后为累计发货数量（数据库是 INTEGER）
   // 扩展字段
-  package: string;        // 封装
-  version: string;        // 版本号
+  package: string; // 封装
+  version: string; // 版本号
   productionDate: string; // 生产日期年周
-  traceNo: string;        // 追踪码
-  sourceNo: string;       // 箱号
+  traceNo: string; // 追踪码
+  sourceNo: string; // 箱号
   // 系统字段
   scanned_at: string;
   raw_content: string;
-  separator?: string;       // 扫码时使用的分隔符（用于显示拆分结果）
+  separator?: string; // 扫码时使用的分隔符（用于显示拆分结果）
   // 自定义字段
-  customFields?: Record<string, string>;  // 自定义字段值，key为字段ID
+  customFields?: Record<string, string>; // 自定义字段值，key为字段ID
   // 拆包相关
-  isUnpacked?: boolean;      // 是否已拆包
-  unpackCount?: number;      // 拆包次数
+  isUnpacked?: boolean; // 是否已拆包
+  unpackCount?: number; // 拆包次数
   original_quantity?: string; // 原始数量（第一次拆包时记录）
   remaining_quantity?: string; // 剩余数量（用于下次扫码拆包）
   // V3.0 新增字段
-  warehouse_id?: string;     // 仓库ID
-  warehouse_name?: string;   // 仓库名称（冗余存储）
-  inventory_code?: string;   // 存货编码
+  warehouse_id?: string; // 仓库ID
+  warehouse_name?: string; // 仓库名称（冗余存储）
+  inventory_code?: string; // 存货编码
 }
 
 // 订单接口
@@ -158,7 +160,7 @@ export interface Order {
   customer_name: string;
   created_at: string;
   // V3.0 新增字段
-  warehouse_id?: string;  // 仓库ID
+  warehouse_id?: string; // 仓库ID
   warehouse_name?: string; // 仓库名称（冗余存储，方便显示）
 }
 
@@ -167,66 +169,66 @@ export interface Order {
 // 仓库接口
 export interface Warehouse {
   id: string;
-  name: string;           // 仓库名称
-  description?: string;   // 仓库描述
-  is_default?: boolean;   // 是否默认仓库
-  created_at?: string;    // 创建时间
+  name: string; // 仓库名称
+  description?: string; // 仓库描述
+  is_default?: boolean; // 是否默认仓库
+  created_at?: string; // 创建时间
 }
 
 // 物料管理接口（型号-存货编码绑定）
 export interface InventoryBinding {
   id: string;
-  scan_model: string;     // 扫描型号
+  scan_model: string; // 扫描型号
   inventory_code: string; // 存货编码
-  supplier?: string;      // 供应商
-  description?: string;   // 描述备注
+  supplier?: string; // 供应商
+  description?: string; // 描述备注
   created_at: string;
 }
 
 // 入库记录接口
 export interface InboundRecord {
   id: string;
-  inbound_no: string;     // 入库单号（RK+日期+序号）
-  warehouse_id: string;   // 仓库ID
+  inbound_no: string; // 入库单号（RK+日期+序号）
+  warehouse_id: string; // 仓库ID
   warehouse_name: string; // 仓库名称（冗余存储）
   inventory_code: string; // 存货编码
-  scan_model: string;     // 扫描型号
-  batch: string;          // 批次
-  quantity: number;       // 数量（数值类型，便于Excel求和）
-  in_date: string;        // 入库日期
-  notes?: string;         // 备注
-  rawContent?: string;    // 原始二维码内容（新增）
+  scan_model: string; // 扫描型号
+  batch: string; // 批次
+  quantity: number; // 数量（数值类型，便于Excel求和）
+  in_date: string; // 入库日期
+  notes?: string; // 备注
+  rawContent?: string; // 原始二维码内容（新增）
   created_at: string;
   // 扩展字段
-  package?: string;       // 封装
-  version?: string;       // 版本号
+  package?: string; // 封装
+  version?: string; // 版本号
   productionDate?: string; // 生产日期
-  traceNo?: string;       // 追踪码
-  sourceNo?: string;       // 箱号
+  traceNo?: string; // 追踪码
+  sourceNo?: string; // 箱号
   customFields?: Record<string, string>; // 自定义字段
 }
 
 // 盘点记录接口
 export interface InventoryCheckRecord {
   id: string;
-  check_no: string;       // 盘点单号（PD+日期+序号）
-  warehouse_id: string;   // 仓库ID
+  check_no: string; // 盘点单号（PD+日期+序号）
+  warehouse_id: string; // 仓库ID
   warehouse_name: string; // 仓库名称（冗余存储）
   inventory_code: string; // 存货编码
-  scan_model: string;     // 扫描型号
-  batch: string;          // 批次
-  quantity: number;       // 数量（数值类型）
-  check_type: 'whole' | 'partial';  // 整包/拆包
+  scan_model: string; // 扫描型号
+  batch: string; // 批次
+  quantity: number; // 数量（数值类型）
+  check_type: 'whole' | 'partial'; // 整包/拆包
   actual_quantity?: number; // 实际数量（拆包时填写）
-  check_date: string;     // 盘点日期
-  notes?: string;         // 备注
+  check_date: string; // 盘点日期
+  notes?: string; // 备注
   created_at: string;
   // 扩展字段
-  package?: string;       // 封装
-  version?: string;       // 版本号
+  package?: string; // 封装
+  version?: string; // 版本号
   productionDate?: string; // 生产日期
-  traceNo?: string;       // 追踪码
-  sourceNo?: string;      // 箱号
+  traceNo?: string; // 追踪码
+  sourceNo?: string; // 箱号
   customFields?: Record<string, string>; // 自定义字段
 }
 
@@ -250,24 +252,24 @@ export interface UnpackRecord {
   // V3.0 新增：存货编码
   inventory_code?: string;
   // 数量信息
-  original_quantity: string;   // 原数量（拆包前的总数）
-  new_quantity: string;        // 当前标签数量
+  original_quantity: string; // 原数量（拆包前的总数）
+  new_quantity: string; // 当前标签数量
   // 溯源信息
   productionDate: string;
-  traceNo: string;             // 原追踪码
-  new_traceNo: string;         // 新追踪码（拆包生成）
-  sourceNo: string;            // 箱号（不变）
+  traceNo: string; // 原追踪码
+  new_traceNo: string; // 新追踪码（拆包生成）
+  sourceNo: string; // 箱号（不变）
   // 标签类型：shipped=发货标签（拆出的部分），remaining=剩余标签（剩余的部分）
   label_type: 'shipped' | 'remaining';
   // 关联ID：发货标签和剩余标签是一对，通过这个字段关联
   pair_id: string;
   // 状态
-  status: 'pending' | 'printed';  // pending(待打印) / printed(已打印)
+  status: 'pending' | 'printed'; // pending(待打印) / printed(已打印)
   // 备注
   notes: string;
   // 操作信息
-  unpacked_at: string;         // 拆包时间
-  printed_at: string | null;   // 打印时间
+  unpacked_at: string; // 拆包时间
+  printed_at: string | null; // 打印时间
   created_at: string;
   updated_at: string;
 }
@@ -276,13 +278,13 @@ export interface UnpackRecord {
 export interface PrintHistory {
   id: string;
   // 关联拆包记录
-  unpack_record_ids: string[];  // 支持批量
+  unpack_record_ids: string[]; // 支持批量
   // 导出信息
   export_format: 'csv' | 'excel' | 'json';
   export_file_path: string | null;
   // 打印信息
   printed_at: string;
-  print_count: number;          // 打印份数
+  print_count: number; // 打印份数
   created_at: string;
 }
 
@@ -309,7 +311,15 @@ export interface BackupData {
 
 // 生成唯一ID
 export const generateId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+  idCounter = (idCounter + 1) % Number.MAX_SAFE_INTEGER;
+  const timestamp = Date.now().toString(36);
+  const counter = idCounter.toString(36).padStart(4, '0');
+  const performancePart =
+    typeof globalThis.performance?.now === 'function'
+      ? Math.floor(globalThis.performance.now() * 1000).toString(36)
+      : '';
+  const randomPart = Math.random().toString(36).slice(2, 12);
+  return `${timestamp}${counter}${performancePart}${randomPart}`;
 };
 
 // 辅助函数：JSON 字符串化/解析
@@ -330,7 +340,9 @@ const parseStoredDateTimeToMillis = (value?: string | null): number => {
   if (!value) return 0;
 
   const normalizedValue = normalizeStoredDateTimeString(value) || value;
-  const localMatch = normalizedValue.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/);
+  const localMatch = normalizedValue.match(
+    /^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/
+  );
   if (localMatch) {
     const [, year, month, day, hours = '0', minutes = '0'] = localMatch;
     return new Date(
@@ -359,13 +371,14 @@ const normalizeRuleRecord = (record: any): QRCodeRule => {
   }, {});
   const rawMatchConditions = stringToJson<MatchCondition[]>(record.match_conditions) || [];
   const matchConditions = rawMatchConditions
-    .filter(condition =>
-      condition &&
-      Number.isInteger(condition.fieldIndex) &&
-      typeof condition.keyword === 'string' &&
-      condition.keyword.trim().length > 0
+    .filter(
+      (condition) =>
+        condition &&
+        Number.isInteger(condition.fieldIndex) &&
+        typeof condition.keyword === 'string' &&
+        condition.keyword.trim().length > 0
     )
-    .map(condition => ({
+    .map((condition) => ({
       fieldIndex: condition.fieldIndex,
       keyword: condition.keyword.trim(),
     }));
@@ -384,10 +397,12 @@ const normalizeRuleRecord = (record: any): QRCodeRule => {
 
 const sortRulesByPriority = (rules: QRCodeRule[]): QRCodeRule[] => {
   return rules.slice().sort((a, b) => {
-    const updatedDiff = parseStoredDateTimeToMillis(b.updated_at) - parseStoredDateTimeToMillis(a.updated_at);
+    const updatedDiff =
+      parseStoredDateTimeToMillis(b.updated_at) - parseStoredDateTimeToMillis(a.updated_at);
     if (updatedDiff !== 0) return updatedDiff;
 
-    const createdDiff = parseStoredDateTimeToMillis(b.created_at) - parseStoredDateTimeToMillis(a.created_at);
+    const createdDiff =
+      parseStoredDateTimeToMillis(b.created_at) - parseStoredDateTimeToMillis(a.created_at);
     if (createdDiff !== 0) return createdDiff;
 
     return a.name.localeCompare(b.name, 'zh-CN');
@@ -477,7 +492,8 @@ const debugDumpTables = () => {
 
 // 全局暴露调试函数（在控制台可以调用）
 if (typeof globalThis !== 'undefined') {
-  (globalThis as typeof globalThis & { debugDumpTables?: typeof debugDumpTables }).debugDumpTables = debugDumpTables;
+  (globalThis as typeof globalThis & { debugDumpTables?: typeof debugDumpTables }).debugDumpTables =
+    debugDumpTables;
 }
 
 // 解析 WHERE 条件并过滤数据
@@ -495,11 +511,13 @@ const filterByWhere = (rows: any[], whereClause: string, params: any[]): any[] =
     // % -> .*, _ -> .
     const regexPattern = pattern.replace(/%/g, '.*').replace(/_/g, '.');
     const regex = new RegExp(`^${regexPattern}$`, 'i');
-    const result = rows.filter(row => {
+    const result = rows.filter((row) => {
       const rowValue = row[column] || '';
       return regex.test(String(rowValue));
     });
-    console.log(`[MockDB] LIKE filter: column=${column}, pattern=${pattern}, result=${result.length} rows`);
+    console.log(
+      `[MockDB] LIKE filter: column=${column}, pattern=${pattern}, result=${result.length} rows`
+    );
     return result;
   }
 
@@ -508,11 +526,12 @@ const filterByWhere = (rows: any[], whereClause: string, params: any[]): any[] =
   if (singleMatch) {
     const column = singleMatch[1];
     const value = params[0];
-    const result = rows.filter(row => {
+    const result = rows.filter((row) => {
       const rowValue = row[column];
-      const matched = typeof rowValue === 'number' && typeof value === 'number'
-        ? rowValue === value
-        : String(rowValue) === String(value);
+      const matched =
+        typeof rowValue === 'number' && typeof value === 'number'
+          ? rowValue === value
+          : String(rowValue) === String(value);
       console.log(`[MockDB] Single condition: ${column}="${rowValue}" ?= "${value}" -> ${matched}`);
       return matched;
     });
@@ -539,7 +558,9 @@ const filterByWhere = (rows: any[], whereClause: string, params: any[]): any[] =
         const rowValue = row[column];
         const matched = String(rowValue) === String(value);
 
-        console.log(`[MockDB]   Condition ${i}: ${column}="${rowValue}" ?= "${value}" -> ${matched}`);
+        console.log(
+          `[MockDB]   Condition ${i}: ${column}="${rowValue}" ?= "${value}" -> ${matched}`
+        );
 
         if (!matched) {
           allMatched = false;
@@ -591,7 +612,7 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
 
         if (tableMatch && columnsMatch) {
           const tableName = tableMatch[1];
-          const columns = columnsMatch[1].split(',').map(c => c.trim());
+          const columns = columnsMatch[1].split(',').map((c) => c.trim());
           const row: any = {};
           params?.forEach((value, index) => {
             if (index < columns.length) {
@@ -624,14 +645,14 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
           const rows = mockTables[tableName] || [];
 
           // 解析 SET 子句（格式：column = ?, column = ?, ...）
-          const setParts = setClause.split(',').map(p => p.trim());
-          const columnNames = setParts.map(part => part.split('=')[0].trim());
+          const setParts = setClause.split(',').map((p) => p.trim());
+          const columnNames = setParts.map((part) => part.split('=')[0].trim());
 
           // 找到匹配的行
           let updatedCount = 0;
           if (whereClause && params) {
             const filtered = filterByWhere(rows, whereClause, params.slice(columnNames.length));
-            filtered.forEach(row => {
+            filtered.forEach((row) => {
               // 更新字段值
               columnNames.forEach((col, index) => {
                 row[col] = params[index];
@@ -657,7 +678,7 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
           if (whereClause && params) {
             const filtered = filterByWhere(rows, whereClause, params);
             // 从原数组中删除匹配的行
-            filtered.forEach(row => {
+            filtered.forEach((row) => {
               const index = rows.indexOf(row);
               if (index > -1) {
                 rows.splice(index, 1);
@@ -687,7 +708,10 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
 
           // 检查表是否存在
           if (!mockTables[tableName]) {
-            console.log(`[MockDB] Table "${tableName}" does not exist! Available tables:`, Object.keys(mockTables));
+            console.log(
+              `[MockDB] Table "${tableName}" does not exist! Available tables:`,
+              Object.keys(mockTables)
+            );
             return [];
           }
 
@@ -750,16 +774,18 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
           }
 
           // 否则只返回指定的字段
-          const columns = selectClause.split(',').map(c => c.trim());
-          const mappedResults = filteredResults.map(row => {
+          const columns = selectClause.split(',').map((c) => c.trim());
+          const mappedResults = filteredResults.map((row) => {
             const result: any = {};
-            columns.forEach(col => {
+            columns.forEach((col) => {
               result[col] = row[col];
             });
             return result;
           });
 
-          console.log(`[MockDB] Selected ${mappedResults.length} rows (${selectClause}) from ${tableName}`);
+          console.log(
+            `[MockDB] Selected ${mappedResults.length} rows (${selectClause}) from ${tableName}`
+          );
           return mappedResults as T[];
         }
       }
@@ -777,7 +803,10 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
 
           // 检查表是否存在
           if (!mockTables[tableName]) {
-            console.log(`[MockDB] Table "${tableName}" does not exist! Available tables:`, Object.keys(mockTables));
+            console.log(
+              `[MockDB] Table "${tableName}" does not exist! Available tables:`,
+              Object.keys(mockTables)
+            );
             return null;
           }
 
@@ -818,9 +847,9 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
               }
 
               // 否则只返回指定的字段
-              const columns = selectClause.split(',').map(c => c.trim());
+              const columns = selectClause.split(',').map((c) => c.trim());
               const result: any = {};
-              columns.forEach(col => {
+              columns.forEach((col) => {
                 result[col] = row[col];
               });
               console.log(`[MockDB] Found first row (${selectClause}) in ${tableName}:`, result);
@@ -839,7 +868,9 @@ const createMockDatabase = (): SQLite.SQLiteDatabase => {
 // 数据库版本号（当表结构变化时递增）
 const DB_VERSION = 3;
 
-const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDatabase): Promise<void> => {
+const migrateInboundAndInventoryRecordTables = async (
+  database: SQLite.SQLiteDatabase
+): Promise<void> => {
   const inboundTable = await database.getFirstAsync<{ sql: string | null }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
     ['inbound_records']
@@ -849,8 +880,10 @@ const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDat
     ['inventory_check_records']
   );
 
-  const inboundNeedsMigration = inboundTable?.sql?.includes('inbound_no TEXT NOT NULL UNIQUE') ?? false;
-  const inventoryNeedsMigration = inventoryTable?.sql?.includes('check_no TEXT NOT NULL UNIQUE') ?? false;
+  const inboundNeedsMigration =
+    inboundTable?.sql?.includes('inbound_no TEXT NOT NULL UNIQUE') ?? false;
+  const inventoryNeedsMigration =
+    inventoryTable?.sql?.includes('check_no TEXT NOT NULL UNIQUE') ?? false;
 
   if (!inboundNeedsMigration && !inventoryNeedsMigration) {
     return;
@@ -936,7 +969,9 @@ const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDat
         FROM inventory_check_records;
       `);
       await database.execAsync('DROP TABLE inventory_check_records');
-      await database.execAsync('ALTER TABLE inventory_check_records_new RENAME TO inventory_check_records');
+      await database.execAsync(
+        'ALTER TABLE inventory_check_records_new RENAME TO inventory_check_records'
+      );
     }
 
     await database.execAsync('COMMIT');
@@ -950,7 +985,7 @@ const migrateInboundAndInventoryRecordTables = async (database: SQLite.SQLiteDat
 
 const ensureRuleFieldPrefixesColumn = async (database: SQLite.SQLiteDatabase): Promise<void> => {
   const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(qr_code_rules)');
-  const hasFieldPrefixes = columns.some(column => column.name === 'field_prefixes');
+  const hasFieldPrefixes = columns.some((column) => column.name === 'field_prefixes');
 
   if (hasFieldPrefixes) {
     return;
@@ -976,10 +1011,14 @@ const normalizeDateTimeColumns = async (
     const updateFields: string[] = [];
     const values: string[] = [];
 
-    columns.forEach(column => {
+    columns.forEach((column) => {
       const originalValue = row[column];
       const normalizedValue = normalizeStoredDateTimeString(originalValue);
-      if (typeof originalValue === 'string' && normalizedValue && normalizedValue !== originalValue) {
+      if (
+        typeof originalValue === 'string' &&
+        normalizedValue &&
+        normalizedValue !== originalValue
+      ) {
         updateFields.push(`${column} = ?`);
         values.push(normalizedValue);
       }
@@ -1004,7 +1043,12 @@ const normalizeLegacyDateTimeColumns = async (database: SQLite.SQLiteDatabase): 
   try {
     await normalizeDateTimeColumns(database, 'orders', 'id', ['created_at']);
     await normalizeDateTimeColumns(database, 'materials', 'id', ['scanned_at']);
-    await normalizeDateTimeColumns(database, 'unpack_records', 'id', ['unpacked_at', 'printed_at', 'created_at', 'updated_at']);
+    await normalizeDateTimeColumns(database, 'unpack_records', 'id', [
+      'unpacked_at',
+      'printed_at',
+      'created_at',
+      'updated_at',
+    ]);
     await normalizeDateTimeColumns(database, 'print_history', 'id', ['printed_at', 'created_at']);
     await normalizeDateTimeColumns(database, 'qr_code_rules', 'id', ['created_at', 'updated_at']);
     await normalizeDateTimeColumns(database, 'custom_fields', 'id', ['created_at', 'updated_at']);
@@ -1096,7 +1140,10 @@ const performDatabaseInitialization = async (): Promise<void> => {
   // 打开数据库（如果不存在会自动创建）
   console.log('[performDatabaseInitialization] 准备调用 openDatabaseAsync...');
   db = await SQLite.openDatabaseAsync('warehouse.db');
-  console.log('[performDatabaseInitialization] openDatabaseAsync 完成，db对象:', db ? '已创建' : 'null');
+  console.log(
+    '[performDatabaseInitialization] openDatabaseAsync 完成，db对象:',
+    db ? '已创建' : 'null'
+  );
 
   // 先创建 system_config 表（用于版本管理和安装ID）
   await db.execAsync(`
@@ -1115,34 +1162,34 @@ const performDatabaseInitialization = async (): Promise<void> => {
   if (!installIdResult) {
     // 首次运行，生成并保存安装 ID
     const newInstallId = `install_${Date.now()}`;
-    await db.runAsync(
-      'INSERT INTO system_config (key, value) VALUES (?, ?)',
-      ['install_id', newInstallId]
-    );
+    await db.runAsync('INSERT INTO system_config (key, value) VALUES (?, ?)', [
+      'install_id',
+      newInstallId,
+    ]);
     console.log('[initDatabase] 首次运行，生成安装 ID:', newInstallId);
   } else {
     console.log('[initDatabase] 检测到现有安装，installId:', installIdResult.value);
   }
 
-    // 检查数据库版本
-    const versionResult = await db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM system_config WHERE key = ?',
-      ['db_version']
-    );
-    const currentVersion = versionResult ? parseInt(versionResult.value, 10) : 0;
-    const targetDbVersion = currentVersion > DB_VERSION ? currentVersion : DB_VERSION;
+  // 检查数据库版本
+  const versionResult = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM system_config WHERE key = ?',
+    ['db_version']
+  );
+  const currentVersion = versionResult ? parseInt(versionResult.value, 10) : 0;
+  const targetDbVersion = currentVersion > DB_VERSION ? currentVersion : DB_VERSION;
 
-    console.log('[DB Version] 当前数据库版本:', currentVersion, '期望版本:', DB_VERSION);
+  console.log('[DB Version] 当前数据库版本:', currentVersion, '期望版本:', DB_VERSION);
 
-    // 版本不一致时只做非破坏性迁移，绝不因版本号变化直接删库。
-    if (currentVersion > DB_VERSION) {
-      console.warn('[DB Version] 检测到更高版本数据库，保留现有数据并继续初始化');
-    } else if (currentVersion > 0 && currentVersion < DB_VERSION) {
-      console.log('[DB Version] 检测到旧版本数据库，将尝试执行非破坏性迁移...');
-    }
+  // 版本不一致时只做非破坏性迁移，绝不因版本号变化直接删库。
+  if (currentVersion > DB_VERSION) {
+    console.warn('[DB Version] 检测到更高版本数据库，保留现有数据并继续初始化');
+  } else if (currentVersion > 0 && currentVersion < DB_VERSION) {
+    console.log('[DB Version] 检测到旧版本数据库，将尝试执行非破坏性迁移...');
+  }
 
-    // 创建所有表
-    await db.execAsync(`
+  // 创建所有表
+  await db.execAsync(`
       -- 性能优化配置
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -1339,13 +1386,13 @@ const performDatabaseInitialization = async (): Promise<void> => {
       );
     `);
 
-    await migrateInboundAndInventoryRecordTables(db);
-    await ensureRuleFieldPrefixesColumn(db);
-    if (currentVersion < 3) {
-      await normalizeLegacyDateTimeColumns(db);
-    }
+  await migrateInboundAndInventoryRecordTables(db);
+  await ensureRuleFieldPrefixesColumn(db);
+  if (currentVersion < 3) {
+    await normalizeLegacyDateTimeColumns(db);
+  }
 
-    await db.execAsync(`
+  await db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_orders_warehouse_created
       ON orders (warehouse_id, created_at DESC);
 
@@ -1389,54 +1436,63 @@ const performDatabaseInitialization = async (): Promise<void> => {
       ON inbound_summary (warehouse_id, in_date DESC);
     `);
 
-    // 初始化默认数据
-    const isoDateTime = getISODateTime();
+  // 初始化默认数据
+  const isoDateTime = getISODateTime();
 
-    // 检查是否已有默认仓库
-    const defaultWarehouse = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM warehouses WHERE is_default = 1'
-    );
+  // 检查是否已有默认仓库
+  const defaultWarehouse = await db.getFirstAsync<{ id: string }>(
+    'SELECT id FROM warehouses WHERE is_default = 1'
+  );
 
-    if (!defaultWarehouse) {
-      await db.runAsync(
-        'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
-        ['default_warehouse', '默认仓库', '系统默认创建的仓库', 1, isoDateTime]
-      );
-      console.log('创建默认仓库');
-    }
-
-    // 检查是否已有默认规则
-    const defaultRule = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM qr_code_rules WHERE id = ?',
-      ['default_jihai']
-    );
-
-    if (!defaultRule) {
-      await db.runAsync(
-        `INSERT INTO qr_code_rules (id, name, description, separator, field_order, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          'default_jihai',
-          '极海半导体',
-          '型号/批次/封装/版本号/数量/生产日期年周/追踪码/箱号',
-          '/',
-          JSON.stringify(['model', 'batch', 'package', 'version', 'quantity', 'productionDate', 'traceNo', 'sourceNo']),
-          1,
-          isoDateTime,
-          isoDateTime
-        ]
-      );
-      console.log('创建默认二维码规则');
-    }
-
-    // 设置数据库版本号
+  if (!defaultWarehouse) {
     await db.runAsync(
-      'INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
-      ['db_version', targetDbVersion.toString()]
+      'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['default_warehouse', '默认仓库', '系统默认创建的仓库', 1, isoDateTime]
     );
-    console.log('[initDatabase] 数据库版本已设置为:', targetDbVersion);
+    console.log('创建默认仓库');
+  }
 
-    console.log('[initDatabase] SQLite 数据库初始化成功');
+  // 检查是否已有默认规则
+  const defaultRule = await db.getFirstAsync<{ id: string }>(
+    'SELECT id FROM qr_code_rules WHERE id = ?',
+    ['default_jihai']
+  );
+
+  if (!defaultRule) {
+    await db.runAsync(
+      `INSERT INTO qr_code_rules (id, name, description, separator, field_order, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'default_jihai',
+        '极海半导体',
+        '型号/批次/封装/版本号/数量/生产日期年周/追踪码/箱号',
+        '/',
+        JSON.stringify([
+          'model',
+          'batch',
+          'package',
+          'version',
+          'quantity',
+          'productionDate',
+          'traceNo',
+          'sourceNo',
+        ]),
+        1,
+        isoDateTime,
+        isoDateTime,
+      ]
+    );
+    console.log('创建默认二维码规则');
+  }
+
+  // 设置数据库版本号
+  await db.runAsync('INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)', [
+    'db_version',
+    targetDbVersion.toString(),
+  ]);
+  console.log('[initDatabase] 数据库版本已设置为:', targetDbVersion);
+
+  console.log('[initDatabase] SQLite 数据库初始化成功');
 };
 
 // 强制重新初始化数据库（用于清除数据后）
@@ -1472,7 +1528,7 @@ export const reinitializeDatabase = async (): Promise<void> => {
 
 // 添加或更新订单
 export const upsertOrder = async (
-  orderNo: string, 
+  orderNo: string,
   customerName?: string,
   warehouse?: { id: string; name: string }
 ): Promise<void> => {
@@ -1485,13 +1541,17 @@ export const upsertOrder = async (
     }
 
     const database = getDb();
-    
+
     // 检查订单是否存在
-    const existingOrder = await database.getFirstAsync<{ id: string; customer_name: string; warehouse_id: string; warehouse_name: string }>(
-      'SELECT id, customer_name, warehouse_id, warehouse_name FROM orders WHERE order_no = ?',
-      [orderNo]
-    );
-    
+    const existingOrder = await database.getFirstAsync<{
+      id: string;
+      customer_name: string;
+      warehouse_id: string;
+      warehouse_name: string;
+    }>('SELECT id, customer_name, warehouse_id, warehouse_name FROM orders WHERE order_no = ?', [
+      orderNo,
+    ]);
+
     if (existingOrder) {
       // 更新现有订单
       const updates: string[] = [];
@@ -1530,14 +1590,14 @@ export const upsertOrder = async (
           materialParams.push(warehouse.id);
           materialParams.push(warehouse.name);
         }
-        
+
         if (materialUpdates.length > 0) {
           materialParams.push(orderNo);
           await database.runAsync(
             `UPDATE materials SET ${materialUpdates.join(', ')} WHERE order_no = ?`,
             materialParams
           );
-          
+
           // 同步更新拆包记录
           await database.runAsync(
             `UPDATE unpack_records SET ${materialUpdates.join(', ')} WHERE order_no = ?`,
@@ -1555,10 +1615,17 @@ export const upsertOrder = async (
         warehouse_id: warehouse?.id || undefined,
         warehouse_name: warehouse?.name || undefined,
       };
-      
+
       await database.runAsync(
         'INSERT INTO orders (id, order_no, customer_name, created_at, warehouse_id, warehouse_name) VALUES (?, ?, ?, ?, ?, ?)',
-        [newOrder.id, newOrder.order_no, newOrder.customer_name, newOrder.created_at, newOrder.warehouse_id || null, newOrder.warehouse_name || null]
+        [
+          newOrder.id,
+          newOrder.order_no,
+          newOrder.customer_name,
+          newOrder.created_at,
+          newOrder.warehouse_id || null,
+          newOrder.warehouse_name || null,
+        ]
       );
     }
   } catch (error) {
@@ -1577,10 +1644,9 @@ export const getOrder = async (orderNo: string): Promise<Order | null> => {
     }
 
     const database = getDb();
-    const result = await database.getFirstAsync<Order>(
-      'SELECT * FROM orders WHERE order_no = ?',
-      [orderNo.trim()]
-    );
+    const result = await database.getFirstAsync<Order>('SELECT * FROM orders WHERE order_no = ?', [
+      orderNo.trim(),
+    ]);
     return result || null;
   } catch (error) {
     console.error('[getOrder] 获取订单失败:', error);
@@ -1636,7 +1702,9 @@ const toDateKeys = (date: Date) => {
   };
 };
 
-const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; legacyLocal: string; order: string }> => {
+const getDateKeysForFilter = (
+  filter: OrderTimeFilter
+): Array<{ local: string; legacyLocal: string; order: string }> => {
   if (filter === 'all') return [];
 
   const days = filter === 'today' ? 1 : filter === 'threeDays' ? 3 : 7;
@@ -1648,21 +1716,21 @@ const getDateKeysForFilter = (filter: OrderTimeFilter): Array<{ local: string; l
 };
 
 const getLocalDatePrefixesForFilter = (filter: OrderTimeFilter): string[] => {
-  return [...new Set(
-    getDateKeysForFilter(filter).flatMap(item => [item.local, item.legacyLocal])
-  )];
+  return [
+    ...new Set(getDateKeysForFilter(filter).flatMap((item) => [item.local, item.legacyLocal])),
+  ];
 };
 
 const appendDateLikeWhere = (
   conditions: string[],
   params: any[],
   column: string,
-  values: string[],
+  values: string[]
 ) => {
   if (values.length === 0) return;
 
   conditions.push(`(${values.map(() => `${column} LIKE ?`).join(' OR ')})`);
-  values.forEach(value => params.push(`${value}%`));
+  values.forEach((value) => params.push(`${value}%`));
 };
 
 const normalizeMaterialRecord = (record: any): MaterialRecord => ({
@@ -1685,15 +1753,19 @@ const filterOrdersInMemory = (
     warehouseId?: string;
     timeFilter?: OrderTimeFilter;
     batchOrderNos?: Set<string>;
-  },
+  }
 ) => {
   const searchText = params.searchText?.trim().toLowerCase() || '';
-  const allowedDates = new Set(getDateKeysForFilter(params.timeFilter || 'all').map(item => item.order));
+  const allowedDates = new Set(
+    getDateKeysForFilter(params.timeFilter || 'all').map((item) => item.order)
+  );
 
   return orders
-    .filter(order => !params.warehouseId || order.warehouse_id === params.warehouseId)
-    .filter(order => allowedDates.size === 0 || allowedDates.has(extractOrderDateKey(order.order_no)))
-    .filter(order => {
+    .filter((order) => !params.warehouseId || order.warehouse_id === params.warehouseId)
+    .filter(
+      (order) => allowedDates.size === 0 || allowedDates.has(extractOrderDateKey(order.order_no))
+    )
+    .filter((order) => {
       if (!searchText) return true;
       if (params.searchType === 'customer') {
         return (order.customer_name || '').toLowerCase().includes(searchText);
@@ -1709,13 +1781,14 @@ const filterOrdersInMemory = (
 const filterMaterialsInMemory = (
   materials: MaterialRecord[],
   warehouseId?: string,
-  timeFilter: OrderTimeFilter = 'all',
+  timeFilter: OrderTimeFilter = 'all'
 ) => {
   const allowedDates = new Set(getLocalDatePrefixesForFilter(timeFilter));
-  return materials.filter(material => (
-    (!warehouseId || material.warehouse_id === warehouseId) &&
-    (allowedDates.size === 0 || allowedDates.has((material.scanned_at || '').split(' ')[0]))
-  ));
+  return materials.filter(
+    (material) =>
+      (!warehouseId || material.warehouse_id === warehouseId) &&
+      (allowedDates.size === 0 || allowedDates.has((material.scanned_at || '').split(' ')[0]))
+  );
 };
 
 export const getFilteredOrders = async (params: {
@@ -1737,8 +1810,10 @@ export const getFilteredOrders = async (params: {
         const materials = await getAllMaterials(params.warehouseId);
         batchOrderNos = new Set(
           materials
-            .filter(material => (material.batch || '').toLowerCase().includes(searchText.toLowerCase()))
-            .map(material => material.order_no),
+            .filter((material) =>
+              (material.batch || '').toLowerCase().includes(searchText.toLowerCase())
+            )
+            .map((material) => material.order_no)
         );
       }
 
@@ -1764,7 +1839,7 @@ export const getFilteredOrders = async (params: {
       conditions,
       queryParams,
       'order_no',
-      getDateKeysForFilter(timeFilter).map(item => `IO-${item.order}-`),
+      getDateKeysForFilter(timeFilter).map((item) => `IO-${item.order}-`)
     );
 
     if (searchText) {
@@ -1780,7 +1855,9 @@ export const getFilteredOrders = async (params: {
           materialParams.push(params.warehouseId);
         }
 
-        conditions.push(`order_no IN (SELECT DISTINCT order_no FROM materials WHERE ${materialConditions.join(' AND ')})`);
+        conditions.push(
+          `order_no IN (SELECT DISTINCT order_no FROM materials WHERE ${materialConditions.join(' AND ')})`
+        );
         queryParams.push(...materialParams);
       } else {
         conditions.push('order_no LIKE ?');
@@ -1791,7 +1868,7 @@ export const getFilteredOrders = async (params: {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     return await database.getAllAsync<Order>(
       `SELECT * FROM orders ${whereClause} ORDER BY order_no DESC`,
-      queryParams,
+      queryParams
     );
   } catch (error) {
     console.error('[getFilteredOrders] 查询订单失败:', error);
@@ -1799,7 +1876,10 @@ export const getFilteredOrders = async (params: {
   }
 };
 
-const getOrderCountByFilter = async (warehouseId: string | undefined, filter: OrderTimeFilter): Promise<number> => {
+const getOrderCountByFilter = async (
+  warehouseId: string | undefined,
+  filter: OrderTimeFilter
+): Promise<number> => {
   const database = getDb();
   const conditions: string[] = [];
   const queryParams: any[] = [];
@@ -1813,20 +1893,20 @@ const getOrderCountByFilter = async (warehouseId: string | undefined, filter: Or
     conditions,
     queryParams,
     'order_no',
-    getDateKeysForFilter(filter).map(item => `IO-${item.order}-`),
+    getDateKeysForFilter(filter).map((item) => `IO-${item.order}-`)
   );
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const result = await database.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count FROM orders ${whereClause}`,
-    queryParams,
+    queryParams
   );
   return result?.count || 0;
 };
 
 const getMaterialTotalsByFilter = async (
   warehouseId: string | undefined,
-  filter: OrderTimeFilter,
+  filter: OrderTimeFilter
 ): Promise<{ count: number; quantity: number }> => {
   const database = getDb();
   const conditions: string[] = [];
@@ -1837,17 +1917,12 @@ const getMaterialTotalsByFilter = async (
     queryParams.push(warehouseId);
   }
 
-  appendDateLikeWhere(
-    conditions,
-    queryParams,
-    'scanned_at',
-    getLocalDatePrefixesForFilter(filter),
-  );
+  appendDateLikeWhere(conditions, queryParams, 'scanned_at', getLocalDatePrefixesForFilter(filter));
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const result = await database.getFirstAsync<{ count: number; quantity: number }>(
     `SELECT COUNT(*) as count, COALESCE(SUM(CAST(quantity AS INTEGER)), 0) as quantity FROM materials ${whereClause}`,
-    queryParams,
+    queryParams
   );
 
   return {
@@ -1859,29 +1934,42 @@ const getMaterialTotalsByFilter = async (
 export const getOrderManagerStats = async (warehouseId?: string): Promise<OrderManagerStats> => {
   try {
     if (isWebPlatform) {
-      const [orders, materials] = await Promise.all([
-        getAllOrders(),
-        getAllMaterials(warehouseId),
-      ]);
-      const warehouseOrders = orders.filter(order => !warehouseId || order.warehouse_id === warehouseId);
+      const [orders, materials] = await Promise.all([getAllOrders(), getAllMaterials(warehouseId)]);
+      const warehouseOrders = orders.filter(
+        (order) => !warehouseId || order.warehouse_id === warehouseId
+      );
       const totalMaterials = filterMaterialsInMemory(materials, warehouseId, 'all');
       const todayMaterials = filterMaterialsInMemory(materials, warehouseId, 'today');
       const threeDaysMaterials = filterMaterialsInMemory(materials, warehouseId, 'threeDays');
       const sevenDaysMaterials = filterMaterialsInMemory(materials, warehouseId, 'sevenDays');
 
       return {
-        totalOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'all' }).length,
+        totalOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'all' })
+          .length,
         totalMaterials: totalMaterials.length,
         totalQuantity: totalMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
-        todayOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'today' }).length,
+        todayOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'today' })
+          .length,
         todayMaterials: todayMaterials.length,
         todayQuantity: todayMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
-        threeDaysOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'threeDays' }).length,
+        threeDaysOrders: filterOrdersInMemory(warehouseOrders, {
+          warehouseId,
+          timeFilter: 'threeDays',
+        }).length,
         threeDaysMaterials: threeDaysMaterials.length,
-        threeDaysQuantity: threeDaysMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
-        sevenDaysOrders: filterOrdersInMemory(warehouseOrders, { warehouseId, timeFilter: 'sevenDays' }).length,
+        threeDaysQuantity: threeDaysMaterials.reduce(
+          (sum, material) => sum + (material.quantity || 0),
+          0
+        ),
+        sevenDaysOrders: filterOrdersInMemory(warehouseOrders, {
+          warehouseId,
+          timeFilter: 'sevenDays',
+        }).length,
         sevenDaysMaterials: sevenDaysMaterials.length,
-        sevenDaysQuantity: sevenDaysMaterials.reduce((sum, material) => sum + (material.quantity || 0), 0),
+        sevenDaysQuantity: sevenDaysMaterials.reduce(
+          (sum, material) => sum + (material.quantity || 0),
+          0
+        ),
       };
     }
 
@@ -1950,11 +2038,11 @@ export const getOrderMaterialSummaries = async (params: {
       const materials = filterMaterialsInMemory(
         await getAllMaterials(params.warehouseId),
         params.warehouseId,
-        timeFilter,
+        timeFilter
       );
       const summaryMap = new Map<string, OrderMaterialSummary>();
 
-      materials.forEach(material => {
+      materials.forEach((material) => {
         const model = material.model || '未知型号';
         const summary = summaryMap.get(model) || {
           model,
@@ -1983,12 +2071,12 @@ export const getOrderMaterialSummaries = async (params: {
       whereParams.push(params.warehouseId);
     }
 
-  appendDateLikeWhere(
-    conditions,
-    whereParams,
-    'scanned_at',
-    getLocalDatePrefixesForFilter(timeFilter),
-  );
+    appendDateLikeWhere(
+      conditions,
+      whereParams,
+      'scanned_at',
+      getLocalDatePrefixesForFilter(timeFilter)
+    );
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const results = await database.getAllAsync<OrderMaterialSummary>(
@@ -2001,10 +2089,10 @@ export const getOrderMaterialSummaries = async (params: {
       ${whereClause}
       GROUP BY COALESCE(NULLIF(model, ''), '未知型号')
       ORDER BY totalQuantity DESC`,
-      [`${today}%`, ...whereParams],
+      [`${today}%`, ...whereParams]
     );
 
-    return results.map(item => ({
+    return results.map((item) => ({
       model: item.model,
       count: Number(item.count) || 0,
       totalQuantity: Number(item.totalQuantity) || 0,
@@ -2028,9 +2116,9 @@ export const getOrderMaterialsByModel = async (params: {
       return filterMaterialsInMemory(
         await getAllMaterials(params.warehouseId),
         params.warehouseId,
-        timeFilter,
+        timeFilter
       )
-        .filter(material => (material.model || '未知型号') === params.model)
+        .filter((material) => (material.model || '未知型号') === params.model)
         .sort((a, b) => (b.scanned_at || '').localeCompare(a.scanned_at || ''));
     }
 
@@ -2055,13 +2143,13 @@ export const getOrderMaterialsByModel = async (params: {
       conditions,
       queryParams,
       'scanned_at',
-      getLocalDatePrefixesForFilter(timeFilter),
+      getLocalDatePrefixesForFilter(timeFilter)
     );
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const results = await database.getAllAsync<any>(
       `SELECT * FROM materials ${whereClause} ORDER BY scanned_at DESC`,
-      queryParams,
+      queryParams
     );
 
     return results.map(normalizeMaterialRecord);
@@ -2134,7 +2222,7 @@ export const cleanupOldEmptyOrders = async (): Promise<{ deletedCount: number }>
     }
 
     // 删除这些空订单
-    const orderNos = emptyOrders.map(o => o.order_no);
+    const orderNos = emptyOrders.map((o) => o.order_no);
     const placeholders = orderNos.map(() => '?').join(',');
 
     const result = await database.runAsync(
@@ -2154,28 +2242,30 @@ export const cleanupOldEmptyOrders = async (): Promise<{ deletedCount: number }>
 // ========== 物料相关函数 ==========
 
 // 🔥 新增：批量添加物料（使用事务，速度提升 10 倍）
-export const addMaterialsBatch = async (materials: Array<{
-  order_no: string;
-  customer_name?: string;
-  operation_type?: string;
-  model: string;
-  batch?: string;
-  quantity?: number | string;
-  package?: string;
-  version?: string;
-  productionDate?: string;
-  traceNo?: string;
-  sourceNo?: string;
-  scanned_at?: string;
-  raw_content: string;
-  separator?: string;
-  rule_id?: string;
-  rule_name?: string;
-  customFields?: Record<string, string>;
-  warehouse_id?: string;
-  warehouse_name?: string;
-  inventory_code?: string;
-}>): Promise<string[]> => {
+export const addMaterialsBatch = async (
+  materials: Array<{
+    order_no: string;
+    customer_name?: string;
+    operation_type?: string;
+    model: string;
+    batch?: string;
+    quantity?: number | string;
+    package?: string;
+    version?: string;
+    productionDate?: string;
+    traceNo?: string;
+    sourceNo?: string;
+    scanned_at?: string;
+    raw_content: string;
+    separator?: string;
+    rule_id?: string;
+    rule_name?: string;
+    customFields?: Record<string, string>;
+    warehouse_id?: string;
+    warehouse_name?: string;
+    inventory_code?: string;
+  }>
+): Promise<string[]> => {
   try {
     // 🔥 强制初始化保护
     if (!db) {
@@ -2220,7 +2310,7 @@ export const addMaterialsBatch = async (materials: Array<{
           material.operation_type || 'inbound',
           material.model || '',
           material.batch || '',
-          material.quantity != null ? parseInt(String(material.quantity), 10) : 0,
+          parseQuantity(material.quantity, { min: 0 }) ?? 0,
           material.package || '',
           material.version || '',
           material.productionDate || '',
@@ -2235,7 +2325,7 @@ export const addMaterialsBatch = async (materials: Array<{
           material.warehouse_id || null,
           material.warehouse_name || null,
           material.inventory_code || null,
-          material.rule_id ? parseInt(material.rule_id, 10) : null,
+          material.rule_id || null,
           material.rule_name || null,
         ]
       );
@@ -2277,7 +2367,7 @@ export const addMaterial = async (material: {
   sourceNo?: string;
   scanned_at?: string;
   raw_content: string;
-  separator?: string;      // 扫码时使用的分隔符
+  separator?: string; // 扫码时使用的分隔符
   rule_id?: string;
   rule_name?: string;
   customFields?: Record<string, string>;
@@ -2332,7 +2422,7 @@ export const addMaterial = async (material: {
         material.operation_type || 'inbound',
         material.model || '',
         material.batch || '',
-        material.quantity != null ? parseInt(String(material.quantity), 10) : 0,
+        parseQuantity(material.quantity, { min: 0 }) ?? 0,
         material.package || '',
         material.version || '',
         material.productionDate || '',
@@ -2347,7 +2437,7 @@ export const addMaterial = async (material: {
         material.warehouse_id || null,
         material.warehouse_name || null,
         material.inventory_code || null,
-        material.rule_id ? parseInt(material.rule_id, 10) : null,
+        material.rule_id || null,
         material.rule_name || null,
       ]
     );
@@ -2369,10 +2459,9 @@ export const getMaterial = async (id: string): Promise<MaterialRecord | null> =>
     }
 
     const database = getDb();
-    const result = await database.getFirstAsync<any>(
-      'SELECT * FROM materials WHERE id = ?',
-      [id.trim()]
-    );
+    const result = await database.getFirstAsync<any>('SELECT * FROM materials WHERE id = ?', [
+      id.trim(),
+    ]);
 
     if (!result) return null;
 
@@ -2389,7 +2478,10 @@ export const getMaterial = async (id: string): Promise<MaterialRecord | null> =>
 };
 
 // 获取订单下的所有物料记录
-export const getMaterialsByOrder = async (orderNo: string, warehouseId?: string): Promise<MaterialRecord[]> => {
+export const getMaterialsByOrder = async (
+  orderNo: string,
+  warehouseId?: string
+): Promise<MaterialRecord[]> => {
   try {
     // 参数验证
     if (!orderNo || typeof orderNo !== 'string' || orderNo.trim() === '') {
@@ -2410,7 +2502,7 @@ export const getMaterialsByOrder = async (orderNo: string, warehouseId?: string)
 
     const results = await database.getAllAsync<any>(sql, params);
 
-    return results.map(r => ({
+    return results.map((r) => ({
       ...r,
       customFields: stringToJson<Record<string, string>>(r.customFields),
       isUnpacked: r.isUnpacked === 1,
@@ -2429,7 +2521,7 @@ export const checkMaterialExists = async (
   sourceNo?: string,
   traceNo?: string,
   quantity?: string,
-  warehouseId?: string  // 添加 warehouse_id 参数
+  warehouseId?: string // 添加 warehouse_id 参数
 ): Promise<{ material: MaterialRecord | null; isUnpacked: boolean; canRescan: boolean }> => {
   try {
     const database = getDb();
@@ -2483,25 +2575,39 @@ export const checkMaterialExists = async (
         otherOrderParams.push(warehouseId.trim());
       }
 
-      console.log('[checkMaterialExists] OtherOrder SQL:', otherOrderSql, 'Params:', otherOrderParams);
+      console.log(
+        '[checkMaterialExists] OtherOrder SQL:',
+        otherOrderSql,
+        'Params:',
+        otherOrderParams
+      );
 
-      const existingInOtherOrder = await database.getFirstAsync<any>(otherOrderSql, otherOrderParams);
+      const existingInOtherOrder = await database.getFirstAsync<any>(
+        otherOrderSql,
+        otherOrderParams
+      );
 
       if (existingInOtherOrder) {
-        const scanQty = quantity != null && quantity !== '' ? parseInt(String(quantity), 10) : null;
-        const remainingQty = existingInOtherOrder.remaining_quantity != null && existingInOtherOrder.remaining_quantity !== ''
-          ? parseInt(String(existingInOtherOrder.remaining_quantity), 10)
-          : parseInt(String(existingInOtherOrder.quantity), 10);
+        const scanQty =
+          quantity != null && quantity !== '' ? parseQuantity(quantity, { min: 0 }) : null;
+        const remainingQty =
+          parseQuantity(existingInOtherOrder.remaining_quantity, { min: 0 }) ??
+          parseQuantity(existingInOtherOrder.quantity, { min: 0 });
         const material = {
           ...existingInOtherOrder,
           customFields: stringToJson<Record<string, string>>(existingInOtherOrder.customFields),
           isUnpacked: existingInOtherOrder.isUnpacked === 1,
         };
-        const materialQty = parseInt(String(material.quantity), 10);
+        const materialQty = parseQuantity(material.quantity, { min: 0 });
 
-        if (material.isUnpacked && scanQty !== null && scanQty === remainingQty) {
+        if (
+          material.isUnpacked &&
+          scanQty !== null &&
+          remainingQty !== null &&
+          scanQty === remainingQty
+        ) {
           return { material: null, isUnpacked: false, canRescan: false };
-        } else if (scanQty !== null && scanQty === materialQty) {
+        } else if (scanQty !== null && materialQty !== null && scanQty === materialQty) {
           return { material, isUnpacked: false, canRescan: false };
         }
       }
@@ -2530,7 +2636,7 @@ export const getAllMaterials = async (warehouseId?: string): Promise<MaterialRec
 
     const results = await database.getAllAsync<any>(sql, params);
 
-    return results.map(r => ({
+    return results.map((r) => ({
       ...r,
       customFields: stringToJson<Record<string, string>>(r.customFields),
       isUnpacked: r.isUnpacked === 1,
@@ -2551,7 +2657,7 @@ export const searchMaterials = async (params: {
   endDate?: string;
   model?: string;
   batch?: string;
-  warehouse_id?: string;  // 添加 warehouse_id 参数
+  warehouse_id?: string; // 添加 warehouse_id 参数
 }): Promise<MaterialRecord[]> => {
   try {
     const database = getDb();
@@ -2607,7 +2713,7 @@ export const searchMaterials = async (params: {
 
     const results = await database.getAllAsync<any>(sql, queryParams);
 
-    return results.map(r => ({
+    return results.map((r) => ({
       ...r,
       customFields: stringToJson<Record<string, string>>(r.customFields),
       isUnpacked: r.isUnpacked === 1,
@@ -2652,10 +2758,10 @@ export const updateMaterialCustomFields = async (
     }
 
     const database = getDb();
-    await database.runAsync(
-      'UPDATE materials SET customFields = ? WHERE id = ?',
-      [jsonToString(customFields), id.trim()]
-    );
+    await database.runAsync('UPDATE materials SET customFields = ? WHERE id = ?', [
+      jsonToString(customFields),
+      id.trim(),
+    ]);
   } catch (error) {
     console.error('[updateMaterialCustomFields] 更新物料自定义字段失败:', error);
     throw error;
@@ -2663,33 +2769,45 @@ export const updateMaterialCustomFields = async (
 };
 
 // 更新物料数量
-export const updateMaterialQuantity = async (
-  id: string,
-  newQuantity: number
-): Promise<void> => {
+export const updateMaterialQuantity = async (id: string, newQuantity: number): Promise<void> => {
   try {
     // 参数验证
     if (!id || typeof id !== 'string' || id.trim() === '') {
       console.warn('[updateMaterialQuantity] 无效的 id:', id);
       return;
     }
-    if (newQuantity == null || isNaN(newQuantity)) {
+    const parsedQuantity = parseQuantity(newQuantity, { min: 0 });
+    if (parsedQuantity === null) {
       console.warn('[updateMaterialQuantity] 无效的 newQuantity:', newQuantity);
       return;
     }
 
     const database = getDb();
-    await database.runAsync(
-      'UPDATE materials SET quantity = ? WHERE id = ?',
-      [parseInt(String(newQuantity), 10) || 0, id.trim()]
-    );
+    await database.runAsync('UPDATE materials SET quantity = ? WHERE id = ?', [
+      parsedQuantity,
+      id.trim(),
+    ]);
   } catch (error) {
     console.error('[updateMaterialQuantity] 更新物料数量失败:', error);
     throw error;
   }
 };
 
-type MaterialUpdatePayload = Partial<Pick<MaterialRecord, 'model' | 'batch' | 'quantity' | 'package' | 'version' | 'productionDate' | 'traceNo' | 'sourceNo' | 'customer_name' | 'remaining_quantity'>>;
+type MaterialUpdatePayload = Partial<
+  Pick<
+    MaterialRecord,
+    | 'model'
+    | 'batch'
+    | 'quantity'
+    | 'package'
+    | 'version'
+    | 'productionDate'
+    | 'traceNo'
+    | 'sourceNo'
+    | 'customer_name'
+    | 'remaining_quantity'
+  >
+>;
 
 const updateMaterialWithDatabase = async (
   database: SQLite.SQLiteDatabase,
@@ -2704,8 +2822,8 @@ const updateMaterialWithDatabase = async (
       updateFields.push(`${key} = ?`);
 
       // 确保 INTEGER 类型的字段传入 number 类型
-      if (key === 'quantity' || key === 'isUnpacked' || key === 'rule_id') {
-        values.push(Number(value));
+      if (key === 'quantity') {
+        values.push(parseQuantity(value, { min: 0 }) ?? 0);
       } else {
         values.push(value);
       }
@@ -2717,17 +2835,11 @@ const updateMaterialWithDatabase = async (
   }
 
   values.push(id);
-  await database.runAsync(
-    `UPDATE materials SET ${updateFields.join(', ')} WHERE id = ?`,
-    values
-  );
+  await database.runAsync(`UPDATE materials SET ${updateFields.join(', ')} WHERE id = ?`, values);
 };
 
 // 更新物料信息
-export const updateMaterial = async (
-  id: string,
-  updates: MaterialUpdatePayload
-): Promise<void> => {
+export const updateMaterial = async (id: string, updates: MaterialUpdatePayload): Promise<void> => {
   try {
     const database = getDb();
     await updateMaterialWithDatabase(database, id, updates);
@@ -2760,28 +2872,28 @@ export const getStatistics = async (): Promise<{
 }> => {
   try {
     const database = getDb();
-    const today = getISODateTime().slice(0, 10).replace(/-/g, '/');
-    
+    const today = getTodayLocal();
+
     // 订单统计
     const totalOrders = await database.getFirstAsync<{ count: number }>(
       'SELECT COUNT(*) as count FROM orders'
     );
-    
+
     const todayOrders = await database.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM orders WHERE created_at LIKE ?",
+      'SELECT COUNT(*) as count FROM orders WHERE created_at LIKE ?',
       [`${today}%`]
     );
-    
+
     // 物料统计
     const totalMaterials = await database.getFirstAsync<{ count: number; sum: number }>(
       'SELECT COUNT(*) as count, SUM(CAST(quantity AS INTEGER)) as sum FROM materials'
     );
-    
+
     const todayMaterials = await database.getFirstAsync<{ count: number; sum: number }>(
-      "SELECT COUNT(*) as count, SUM(CAST(quantity AS INTEGER)) as sum FROM materials WHERE scanned_at LIKE ?",
+      'SELECT COUNT(*) as count, SUM(CAST(quantity AS INTEGER)) as sum FROM materials WHERE scanned_at LIKE ?',
       [`${today}%`]
     );
-    
+
     return {
       totalOrders: totalOrders?.count || 0,
       totalMaterials: totalMaterials?.count || 0,
@@ -3006,7 +3118,11 @@ export const saveUnpackOperation = async (params: {
 
   const database = getDb();
   const pairId = generateId();
-  const originalQuantity = (params.material.remaining_quantity || params.material.quantity || 0).toString();
+  const originalQuantity = (
+    params.material.remaining_quantity ||
+    params.material.quantity ||
+    0
+  ).toString();
   const notes = params.notes || '';
   const timestamp = getISODateTime();
 
@@ -3034,25 +3150,33 @@ export const saveUnpackOperation = async (params: {
 
   await database.execAsync('BEGIN TRANSACTION');
   try {
-    const shippedRecord = await insertUnpackRecord(database, {
-      ...baseRecord,
-      new_quantity: params.shippedQuantity.toString(),
-      label_type: 'shipped',
-    }, {
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      unpackedAt: timestamp,
-    });
+    const shippedRecord = await insertUnpackRecord(
+      database,
+      {
+        ...baseRecord,
+        new_quantity: params.shippedQuantity.toString(),
+        label_type: 'shipped',
+      },
+      {
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        unpackedAt: timestamp,
+      }
+    );
 
-    const remainingRecord = await insertUnpackRecord(database, {
-      ...baseRecord,
-      new_quantity: params.remainingQuantity.toString(),
-      label_type: 'remaining',
-    }, {
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      unpackedAt: timestamp,
-    });
+    const remainingRecord = await insertUnpackRecord(
+      database,
+      {
+        ...baseRecord,
+        new_quantity: params.remainingQuantity.toString(),
+        label_type: 'remaining',
+      },
+      {
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        unpackedAt: timestamp,
+      }
+    );
 
     await updateMaterialWithDatabase(database, params.material.id, {
       traceNo: params.newTraceNo,
@@ -3106,10 +3230,7 @@ export const deleteUnpackRecords = async (ids: string[]): Promise<void> => {
   try {
     const database = getDb();
     const placeholders = ids.map(() => '?').join(',');
-    await database.runAsync(
-      `DELETE FROM unpack_records WHERE id IN (${placeholders})`,
-      ids
-    );
+    await database.runAsync(`DELETE FROM unpack_records WHERE id IN (${placeholders})`, ids);
   } catch (error) {
     console.error('删除拆包记录失败:', error);
     throw error;
@@ -3184,8 +3305,8 @@ export const getAllPrintHistory = async (): Promise<PrintHistory[]> => {
     const results = await database.getAllAsync<any>(
       'SELECT * FROM print_history ORDER BY printed_at DESC'
     );
-    
-    return results.map(r => ({
+
+    return results.map((r) => ({
       ...r,
       unpack_record_ids: stringToJson<string[]>(r.unpack_record_ids) || [],
     })) as PrintHistory[];
@@ -3206,7 +3327,7 @@ export const addPrintHistory = async (history: {
   try {
     const database = getDb();
     const id = generateId();
-    
+
     await database.runAsync(
       `INSERT INTO print_history (
         id, unpack_record_ids, export_format, export_file_path, printed_at, print_count, created_at
@@ -3221,7 +3342,7 @@ export const addPrintHistory = async (history: {
         getISODateTime(),
       ]
     );
-    
+
     return id;
   } catch (error) {
     console.error('添加打印历史失败:', error);
@@ -3242,12 +3363,17 @@ export const getAllWarehouses = async (): Promise<Warehouse[]> => {
 
     console.log(`[getAllWarehouses] 查询完成，返回 ${results.length} 条记录`);
 
-    const mappedResults = results.map(r => ({
+    const mappedResults = results.map((r) => ({
       ...r,
       is_default: r.is_default === 1,
     })) as Warehouse[];
 
-    console.log('[getAllWarehouses] 返回数据:', JSON.stringify(mappedResults.map(w => ({ id: w.id, name: w.name, is_default: w.is_default }))));
+    console.log(
+      '[getAllWarehouses] 返回数据:',
+      JSON.stringify(
+        mappedResults.map((w) => ({ id: w.id, name: w.name, is_default: w.is_default }))
+      )
+    );
 
     return mappedResults;
   } catch (error) {
@@ -3263,9 +3389,9 @@ export const getDefaultWarehouse = async (): Promise<Warehouse | null> => {
     const result = await database.getFirstAsync<any>(
       'SELECT * FROM warehouses WHERE is_default = 1'
     );
-    
+
     if (!result) return null;
-    
+
     return {
       ...result,
       is_default: result.is_default === 1,
@@ -3277,7 +3403,9 @@ export const getDefaultWarehouse = async (): Promise<Warehouse | null> => {
 };
 
 // 添加仓库
-export const addWarehouse = async (warehouse: Omit<Warehouse, 'id' | 'created_at'>): Promise<string> => {
+export const addWarehouse = async (
+  warehouse: Omit<Warehouse, 'id' | 'created_at'>
+): Promise<string> => {
   try {
     const database = getDb();
     const id = generateId();
@@ -3290,13 +3418,7 @@ export const addWarehouse = async (warehouse: Omit<Warehouse, 'id' | 'created_at
 
     await database.runAsync(
       'INSERT INTO warehouses (id, name, description, is_default, created_at) VALUES (?, ?, ?, ?, ?)',
-      [
-        id,
-        warehouse.name,
-        warehouse.description || null,
-        warehouse.is_default ? 1 : 0,
-        isoDateTime,
-      ]
+      [id, warehouse.name, warehouse.description || null, warehouse.is_default ? 1 : 0, isoDateTime]
     );
 
     return id;
@@ -3359,16 +3481,17 @@ export const deleteWarehouse = async (id: string): Promise<void> => {
         'SELECT id FROM unpack_records WHERE warehouse_id = ?',
         [trimmedId]
       );
-      const unpackIdSet = new Set(unpackRows.map(row => row.id));
+      const unpackIdSet = new Set(unpackRows.map((row) => row.id));
 
       if (unpackIdSet.size > 0) {
-        const printHistoryRows = await database.getAllAsync<{ id: string; unpack_record_ids: string }>(
-          'SELECT id, unpack_record_ids FROM print_history'
-        );
+        const printHistoryRows = await database.getAllAsync<{
+          id: string;
+          unpack_record_ids: string;
+        }>('SELECT id, unpack_record_ids FROM print_history');
 
         for (const row of printHistoryRows) {
           const unpackRecordIds = stringToJson<string[]>(row.unpack_record_ids) || [];
-          const remainingIds = unpackRecordIds.filter(recordId => !unpackIdSet.has(recordId));
+          const remainingIds = unpackRecordIds.filter((recordId) => !unpackIdSet.has(recordId));
 
           if (remainingIds.length === unpackRecordIds.length) {
             continue;
@@ -3377,10 +3500,10 @@ export const deleteWarehouse = async (id: string): Promise<void> => {
           if (remainingIds.length === 0) {
             await database.runAsync('DELETE FROM print_history WHERE id = ?', [row.id]);
           } else {
-            await database.runAsync(
-              'UPDATE print_history SET unpack_record_ids = ? WHERE id = ?',
-              [jsonToString(remainingIds), row.id]
-            );
+            await database.runAsync('UPDATE print_history SET unpack_record_ids = ? WHERE id = ?', [
+              jsonToString(remainingIds),
+              row.id,
+            ]);
           }
         }
       }
@@ -3391,7 +3514,9 @@ export const deleteWarehouse = async (id: string): Promise<void> => {
       await database.runAsync('DELETE FROM inbound_summary WHERE warehouse_id = ?', [trimmedId]);
 
       // 2. 删除盘点记录
-      await database.runAsync('DELETE FROM inventory_check_records WHERE warehouse_id = ?', [trimmedId]);
+      await database.runAsync('DELETE FROM inventory_check_records WHERE warehouse_id = ?', [
+        trimmedId,
+      ]);
 
       // 3. 删除订单及其关联的物料
       await database.runAsync('DELETE FROM materials WHERE warehouse_id = ?', [trimmedId]);
@@ -3469,12 +3594,14 @@ export const getSupplierByModel = async (scanModel: string): Promise<string | nu
 };
 
 // 添加物料绑定
-export const addInventoryBinding = async (binding: Omit<InventoryBinding, 'id' | 'created_at'>): Promise<string> => {
+export const addInventoryBinding = async (
+  binding: Omit<InventoryBinding, 'id' | 'created_at'>
+): Promise<string> => {
   try {
     const database = getDb();
     const id = generateId();
     const isoDateTime = getISODateTime();
-    
+
     await database.runAsync(
       'INSERT INTO inventory_bindings (id, scan_model, inventory_code, supplier, description, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       [
@@ -3486,7 +3613,7 @@ export const addInventoryBinding = async (binding: Omit<InventoryBinding, 'id' |
         isoDateTime,
       ]
     );
-    
+
     return id;
   } catch (error) {
     console.error('添加物料绑定失败:', error);
@@ -3495,7 +3622,10 @@ export const addInventoryBinding = async (binding: Omit<InventoryBinding, 'id' |
 };
 
 // 更新物料绑定
-export const updateInventoryBinding = async (id: string, updates: Partial<InventoryBinding>): Promise<void> => {
+export const updateInventoryBinding = async (
+  id: string,
+  updates: Partial<InventoryBinding>
+): Promise<void> => {
   try {
     const database = getDb();
     const updateFields: string[] = [];
@@ -3539,35 +3669,42 @@ export const deleteInventoryBinding = async (id: string): Promise<void> => {
 };
 
 // 批量导入物料绑定
-export const importInventoryBindings = async (bindings: Array<{ scan_model: string; inventory_code: string; supplier?: string; description?: string }>): Promise<number> => {
+export const importInventoryBindings = async (
+  bindings: Array<{
+    scan_model: string;
+    inventory_code: string;
+    supplier?: string;
+    description?: string;
+  }>
+): Promise<number> => {
   try {
     const database = getDb();
     let importedCount = 0;
     const skippedCodes: string[] = [];
-    
+
     for (const binding of bindings) {
       // 检查是否已存在（存货编码唯一）
       const existing = await database.getFirstAsync<{ id: string }>(
         'SELECT id FROM inventory_bindings WHERE inventory_code = ?',
         [binding.inventory_code]
       );
-      
+
       if (existing) {
         skippedCodes.push(binding.inventory_code);
         continue;
       }
-      
+
       // 检查扫描型号是否已存在
       const existingModel = await database.getFirstAsync<{ id: string }>(
         'SELECT id FROM inventory_bindings WHERE scan_model = ?',
         [binding.scan_model]
       );
-      
+
       if (existingModel) {
         skippedCodes.push(binding.scan_model);
         continue;
       }
-      
+
       // 插入新记录
       await database.runAsync(
         'INSERT INTO inventory_bindings (id, scan_model, inventory_code, supplier, description, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -3580,10 +3717,10 @@ export const importInventoryBindings = async (bindings: Array<{ scan_model: stri
           getISODateTime(),
         ]
       );
-      
+
       importedCount++;
     }
-    
+
     return importedCount;
   } catch (error) {
     console.error('批量导入物料绑定失败:', error);
@@ -3609,11 +3746,9 @@ const getNextDailySequence = async (
 
   let maxSequence = 0;
 
-  rows.forEach(row => {
+  rows.forEach((row) => {
     const documentNo = row.document_no || '';
-    const suffix = documentNo.startsWith(`${prefix}-`)
-      ? documentNo.slice(prefix.length + 1)
-      : '';
+    const suffix = documentNo.startsWith(`${prefix}-`) ? documentNo.slice(prefix.length + 1) : '';
     const sequence = parseInt(suffix, 10);
 
     if (!Number.isNaN(sequence)) {
@@ -3639,7 +3774,7 @@ export const generateInboundNo = async (): Promise<string> => {
     const sequence = String(
       await getNextDailySequence(database, 'inbound_records', 'inbound_no', todayPrefix)
     ).padStart(3, '0');
-    
+
     return `${todayPrefix}-${sequence}`;
   } catch (error) {
     console.error('生成入库单号失败:', error);
@@ -3663,7 +3798,7 @@ export const getAllInboundRecords = async (warehouseId?: string): Promise<Inboun
 
     const results = await database.getAllAsync<any>(sql, params);
 
-    return results.map(r => ({
+    return results.map((r) => ({
       ...r,
       customFields: stringToJson<Record<string, string>>(r.customFields),
     })) as InboundRecord[];
@@ -3832,7 +3967,9 @@ export const updateInboundSummary = async (warehouseId: string): Promise<void> =
       );
     }
 
-    console.log(`[updateInboundSummary] 更新仓库 ${warehouseId} 的汇总数据，共 ${summaryData.length} 条记录`);
+    console.log(
+      `[updateInboundSummary] 更新仓库 ${warehouseId} 的汇总数据，共 ${summaryData.length} 条记录`
+    );
   } catch (error) {
     console.error('[updateInboundSummary] 更新入库汇总表失败:', error);
     throw error;
@@ -3840,7 +3977,11 @@ export const updateInboundSummary = async (warehouseId: string): Promise<void> =
 };
 
 // 获取入库汇总数据
-export const getInboundSummary = async (warehouseId?: string, startDate?: string, endDate?: string): Promise<any[]> => {
+export const getInboundSummary = async (
+  warehouseId?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<any[]> => {
   try {
     const database = getDb();
 
@@ -3917,7 +4058,7 @@ export const generateCheckNo = async (): Promise<string> => {
     const sequence = String(
       await getNextDailySequence(database, 'inventory_check_records', 'check_no', todayPrefix)
     ).padStart(3, '0');
-    
+
     return `${todayPrefix}-${sequence}`;
   } catch (error) {
     console.error('生成盘点单号失败:', error);
@@ -3926,7 +4067,9 @@ export const generateCheckNo = async (): Promise<string> => {
 };
 
 // 获取所有盘点记录
-export const getAllInventoryCheckRecords = async (warehouseId?: string): Promise<InventoryCheckRecord[]> => {
+export const getAllInventoryCheckRecords = async (
+  warehouseId?: string
+): Promise<InventoryCheckRecord[]> => {
   try {
     const database = getDb();
     let sql = 'SELECT * FROM inventory_check_records';
@@ -3941,7 +4084,7 @@ export const getAllInventoryCheckRecords = async (warehouseId?: string): Promise
 
     const results = await database.getAllAsync<any>(sql, params);
 
-    return results.map(r => ({
+    return results.map((r) => ({
       ...r,
       customFields: stringToJson<Record<string, string>>(r.customFields),
     })) as InventoryCheckRecord[];
@@ -3964,15 +4107,20 @@ const insertInventoryCheckRecord = async (
   const id = options?.id || generateId();
   const createdAt = options?.createdAt || getISODateTime();
   const quantity = parseQuantity(record.quantity, { min: 1 });
-  const actualQuantity = record.actual_quantity !== null && record.actual_quantity !== undefined
-    ? parseQuantity(record.actual_quantity, { min: 0 })
-    : null;
+  const actualQuantity =
+    record.actual_quantity !== null && record.actual_quantity !== undefined
+      ? parseQuantity(record.actual_quantity, { min: 0 })
+      : null;
 
   if (quantity === null) {
     throw new Error('盘点数量无效，必须为大于 0 的整数');
   }
 
-  if (record.actual_quantity !== null && record.actual_quantity !== undefined && actualQuantity === null) {
+  if (
+    record.actual_quantity !== null &&
+    record.actual_quantity !== undefined &&
+    actualQuantity === null
+  ) {
     throw new Error('实际盘点数量无效，必须为不小于 0 的整数');
   }
 
@@ -4009,7 +4157,9 @@ const insertInventoryCheckRecord = async (
 };
 
 // 添加盘点记录
-export const addInventoryCheckRecord = async (record: InventoryCheckRecordInsert): Promise<string> => {
+export const addInventoryCheckRecord = async (
+  record: InventoryCheckRecordInsert
+): Promise<string> => {
   try {
     if (!db) {
       console.warn('[addInventoryCheckRecord] 数据库未初始化，等待初始化...');
@@ -4024,7 +4174,9 @@ export const addInventoryCheckRecord = async (record: InventoryCheckRecordInsert
   }
 };
 
-export const addInventoryCheckRecordsBatch = async (records: InventoryCheckRecordInsert[]): Promise<string[]> => {
+export const addInventoryCheckRecordsBatch = async (
+  records: InventoryCheckRecordInsert[]
+): Promise<string[]> => {
   if (records.length === 0) {
     return [];
   }
@@ -4102,7 +4254,7 @@ export const getAllRules = async (): Promise<QRCodeRule[]> => {
 export const getActiveRules = async (): Promise<QRCodeRule[]> => {
   try {
     const rules = await getAllRules();
-    return rules.filter(r => r.isActive);
+    return rules.filter((r) => r.isActive);
   } catch (error) {
     console.error('获取启用规则失败:', error);
     return [];
@@ -4110,12 +4262,14 @@ export const getActiveRules = async (): Promise<QRCodeRule[]> => {
 };
 
 // 添加规则
-export const addRule = async (rule: Omit<QRCodeRule, 'id' | 'created_at' | 'updated_at'>): Promise<string> => {
+export const addRule = async (
+  rule: Omit<QRCodeRule, 'id' | 'created_at' | 'updated_at'>
+): Promise<string> => {
   try {
     const database = getDb();
     const id = generateId();
     const isoDateTime = getISODateTime();
-    
+
     await database.runAsync(
       `INSERT INTO qr_code_rules (
         id, name, description, separator, field_order, custom_field_ids, is_active,
@@ -4136,7 +4290,7 @@ export const addRule = async (rule: Omit<QRCodeRule, 'id' | 'created_at' | 'upda
         isoDateTime,
       ]
     );
-    
+
     return id;
   } catch (error) {
     console.error('添加规则失败:', error);
@@ -4229,10 +4383,9 @@ export const getRuleById = async (id: string): Promise<QRCodeRule | null> => {
     }
 
     const database = getDb();
-    const result = await database.getFirstAsync<any>(
-      'SELECT * FROM qr_code_rules WHERE id = ?',
-      [id.trim()]
-    );
+    const result = await database.getFirstAsync<any>('SELECT * FROM qr_code_rules WHERE id = ?', [
+      id.trim(),
+    ]);
 
     if (!result) return null;
 
@@ -4257,8 +4410,8 @@ export const getAllCustomFields = async (): Promise<CustomField[]> => {
     const results = await database.getAllAsync<any>(
       'SELECT * FROM custom_fields ORDER BY sort_order ASC'
     );
-    
-    return results.map(r => ({
+
+    return results.map((r) => ({
       ...r,
       required: r.required === 1,
       options: stringToJson<string[]>(r.options),
@@ -4270,18 +4423,20 @@ export const getAllCustomFields = async (): Promise<CustomField[]> => {
 };
 
 // 添加自定义字段
-export const addCustomField = async (field: Omit<CustomField, 'id' | 'created_at' | 'updated_at' | 'sortOrder'>): Promise<string> => {
+export const addCustomField = async (
+  field: Omit<CustomField, 'id' | 'created_at' | 'updated_at' | 'sortOrder'>
+): Promise<string> => {
   try {
     const database = getDb();
     const id = generateId();
     const isoDateTime = getISODateTime();
-    
+
     // 获取当前最大排序值
     const maxResult = await database.getFirstAsync<{ max: number }>(
       'SELECT MAX(sort_order) as max FROM custom_fields'
     );
     const maxSort = maxResult?.max || 0;
-    
+
     await database.runAsync(
       'INSERT INTO custom_fields (id, name, type, required, options, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
@@ -4295,7 +4450,7 @@ export const addCustomField = async (field: Omit<CustomField, 'id' | 'created_at
         isoDateTime,
       ]
     );
-    
+
     return id;
   } catch (error) {
     console.error('添加自定义字段失败:', error);
@@ -4304,12 +4459,15 @@ export const addCustomField = async (field: Omit<CustomField, 'id' | 'created_at
 };
 
 // 更新自定义字段
-export const updateCustomField = async (id: string, updates: Partial<CustomField>): Promise<void> => {
+export const updateCustomField = async (
+  id: string,
+  updates: Partial<CustomField>
+): Promise<void> => {
   try {
     const database = getDb();
     const updateFields: string[] = [];
     const values: any[] = [];
-    
+
     Object.entries(updates).forEach(([key, value]) => {
       if (key === 'required' && value !== undefined) {
         updateFields.push('required = ?');
@@ -4330,7 +4488,7 @@ export const updateCustomField = async (id: string, updates: Partial<CustomField
         values.push(value);
       }
     });
-    
+
     if (updateFields.length > 0) {
       updateFields.push('updated_at = ?');
       values.push(getISODateTime());
@@ -4365,18 +4523,22 @@ export const deleteCustomField = async (id: string): Promise<void> => {
     try {
       for (const rawRule of rules) {
         const rule = normalizeRuleRecord(rawRule);
-        const removedFieldIndex = rule.fieldOrder.findIndex(field => field === customFieldKey);
+        const removedFieldIndex = rule.fieldOrder.findIndex((field) => field === customFieldKey);
 
         if (removedFieldIndex === -1 && !(rule.customFieldIds || []).includes(trimmedId)) {
           continue;
         }
 
-        const nextFieldOrder = rule.fieldOrder.filter(field => field !== customFieldKey);
-        const nextCustomFieldIds = (rule.customFieldIds || []).filter(fieldId => fieldId !== trimmedId);
+        const nextFieldOrder = rule.fieldOrder.filter((field) => field !== customFieldKey);
+        const nextCustomFieldIds = (rule.customFieldIds || []).filter(
+          (fieldId) => fieldId !== trimmedId
+        );
         const nextFieldPrefixes = Object.fromEntries(
-          Object.entries(rule.fieldPrefixes || {}).filter(([fieldKey]) => fieldKey !== customFieldKey)
+          Object.entries(rule.fieldPrefixes || {}).filter(
+            ([fieldKey]) => fieldKey !== customFieldKey
+          )
         ) as FieldPrefixes;
-        const nextMatchConditions = (rule.matchConditions || []).flatMap(condition => {
+        const nextMatchConditions = (rule.matchConditions || []).flatMap((condition) => {
           if (removedFieldIndex === -1) {
             return [condition];
           }
@@ -4423,12 +4585,12 @@ export const deleteCustomField = async (id: string): Promise<void> => {
 export const reorderCustomFields = async (fieldIds: string[]): Promise<void> => {
   try {
     const database = getDb();
-    
+
     for (let i = 0; i < fieldIds.length; i++) {
-      await database.runAsync(
-        'UPDATE custom_fields SET sort_order = ? WHERE id = ?',
-        [i, fieldIds[i]]
-      );
+      await database.runAsync('UPDATE custom_fields SET sort_order = ? WHERE id = ?', [
+        i,
+        fieldIds[i],
+      ]);
     }
   } catch (error) {
     console.error('重新排序自定义字段失败:', error);
@@ -4463,11 +4625,11 @@ const splitByBracket = (str: string, leftBracket: string): string[] => {
   let s = str.trim();
   if (s.startsWith(leftBracket)) s = s.slice(1);
   if (s.endsWith(rightBracket)) s = s.slice(0, -1);
-  return s.split(rightBracket + leftBracket).map(p => p.trim());
+  return s.split(rightBracket + leftBracket).map((p) => p.trim());
 };
 
 const splitBySeparator = (content: string, separator: string): string[] => {
-  return content.split(separator).map(part => part.trim());
+  return content.split(separator).map((part) => part.trim());
 };
 
 const normalizeMatchText = (value: string): string => value.trim().toLowerCase();
@@ -4525,7 +4687,10 @@ type RuleDetectionCandidate = {
   matchedPrefixCount: number;
 };
 
-const compareRuleDetectionCandidates = (a: RuleDetectionCandidate, b: RuleDetectionCandidate): number => {
+const compareRuleDetectionCandidates = (
+  a: RuleDetectionCandidate,
+  b: RuleDetectionCandidate
+): number => {
   if (a.matchedPrefixCount !== b.matchedPrefixCount) {
     return b.matchedPrefixCount - a.matchedPrefixCount;
   }
@@ -4543,12 +4708,14 @@ const compareRuleDetectionCandidates = (a: RuleDetectionCandidate, b: RuleDetect
     return b.fieldCount - a.fieldCount;
   }
 
-  const updatedDiff = parseStoredDateTimeToMillis(b.rule.updated_at) - parseStoredDateTimeToMillis(a.rule.updated_at);
+  const updatedDiff =
+    parseStoredDateTimeToMillis(b.rule.updated_at) - parseStoredDateTimeToMillis(a.rule.updated_at);
   if (updatedDiff !== 0) {
     return updatedDiff;
   }
 
-  const createdDiff = parseStoredDateTimeToMillis(b.rule.created_at) - parseStoredDateTimeToMillis(a.rule.created_at);
+  const createdDiff =
+    parseStoredDateTimeToMillis(b.rule.created_at) - parseStoredDateTimeToMillis(a.rule.created_at);
   if (createdDiff !== 0) {
     return createdDiff;
   }
@@ -4560,25 +4727,27 @@ const compareRuleDetectionCandidates = (a: RuleDetectionCandidate, b: RuleDetect
 export const detectRule = async (content: string): Promise<QRCodeRule | null> => {
   try {
     const rules = await getActiveRules();
-    
+
     // 从规则中提取所有唯一的分隔符
-    const ruleSeparators = [...new Set(rules.map(r => r.separator))];
+    const ruleSeparators = [...new Set(rules.map((r) => r.separator))];
     const commonSeparators = ['||', '|', ',', '*', '#', ';', ':', '\t'];
     const allSeparators = [...ruleSeparators, ...commonSeparators];
     const uniqueSeparators = [...new Set(allSeparators)];
-    
+
     // 检测是否是 URL
     const isURL = (str: string): boolean => {
       const lower = str.toLowerCase();
-      return lower.startsWith('http://') ||
-             lower.startsWith('https://') ||
-             lower.startsWith('ftp://') ||
-             lower.startsWith('sftp://');
+      return (
+        lower.startsWith('http://') ||
+        lower.startsWith('https://') ||
+        lower.startsWith('ftp://') ||
+        lower.startsWith('sftp://')
+      );
     };
-    
+
     // 计算每种分隔符能拆分出多少字段（保留空字段，避免字段位置错位）
     const separatorPartsCount: { separator: string; count: number; parts: string[] }[] = [];
-    
+
     // 优先检测预设括号格式
     const bracketLeft = detectBracketFormat(content);
     if (bracketLeft) {
@@ -4591,7 +4760,7 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
         });
       }
     }
-    
+
     // 检测其他分隔符
     for (const sep of uniqueSeparators) {
       if ((sep === '/' || sep === '//') && isURL(content)) continue;
@@ -4627,22 +4796,24 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
     const closestCandidates: RuleDetectionCandidate[] = [];
 
     for (const { separator, count, parts } of separatorPartsCount) {
-      const matchingRules = rules.filter(rule => rule.separator === separator);
+      const matchingRules = rules.filter((rule) => rule.separator === separator);
       if (matchingRules.length === 0) {
         continue;
       }
 
       matchingRules
-        .filter(rule => (rule.matchConditions?.length || 0) > 0)
-        .forEach(rule => {
+        .filter((rule) => (rule.matchConditions?.length || 0) > 0)
+        .forEach((rule) => {
           const ruleFieldCount = rule.fieldOrder?.length || 0;
           if (ruleFieldCount !== count) {
             return;
           }
 
-          const allMatch = (rule.matchConditions || []).every(condition => {
+          const allMatch = (rule.matchConditions || []).every((condition) => {
             if (condition.fieldIndex < 0 || condition.fieldIndex >= parts.length) return false;
-            return normalizeMatchText(parts[condition.fieldIndex]).includes(normalizeMatchText(condition.keyword));
+            return normalizeMatchText(parts[condition.fieldIndex]).includes(
+              normalizeMatchText(condition.keyword)
+            );
           });
 
           if (allMatch) {
@@ -4651,17 +4822,17 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
         });
 
       matchingRules
-        .filter(rule => (rule.fieldOrder?.length || 0) === count)
-        .forEach(rule => {
+        .filter((rule) => (rule.fieldOrder?.length || 0) === count)
+        .forEach((rule) => {
           exactCandidates.push(buildCandidate(rule, parts));
         });
 
-      const closestRules = matchingRules.filter(rule => (rule.fieldOrder?.length || 0) <= count);
+      const closestRules = matchingRules.filter((rule) => (rule.fieldOrder?.length || 0) <= count);
       if (closestRules.length > 0) {
-        const maxFieldCount = Math.max(...closestRules.map(rule => rule.fieldOrder?.length || 0));
+        const maxFieldCount = Math.max(...closestRules.map((rule) => rule.fieldOrder?.length || 0));
         closestRules
-          .filter(rule => (rule.fieldOrder?.length || 0) === maxFieldCount)
-          .forEach(rule => {
+          .filter((rule) => (rule.fieldOrder?.length || 0) === maxFieldCount)
+          .forEach((rule) => {
             closestCandidates.push(buildCandidate(rule, parts));
           });
       }
@@ -4681,7 +4852,7 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
     if (closestMatch) {
       return closestMatch;
     }
-    
+
     // 没有匹配的规则，尝试自动识别
     if (separatorPartsCount.length > 0) {
       const best = separatorPartsCount
@@ -4698,7 +4869,7 @@ export const detectRule = async (content: string): Promise<QRCodeRule | null> =>
         updated_at: getISODateTime(),
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('识别规则失败:', error);
@@ -4724,7 +4895,7 @@ export const parseWithRule = (
   customFields: Record<string, string>;
 } => {
   let parts: string[];
-  
+
   // 检测是否为括号分隔符
   const bracketLeft = detectBracketFormat(content);
   if (bracketLeft) {
@@ -4732,11 +4903,11 @@ export const parseWithRule = (
   } else {
     parts = splitBySeparator(content, rule.separator);
   }
-  
+
   // 提取标准字段和自定义字段
   const standardFields: Record<string, string> = {};
   const customFields: Record<string, string> = {};
-  
+
   rule.fieldOrder.forEach((fieldName, index) => {
     if (index < parts.length) {
       const parsedValue = stripConfiguredFieldPrefix(parts[index], rule.fieldPrefixes?.[fieldName]);
@@ -4747,7 +4918,7 @@ export const parseWithRule = (
       }
     }
   });
-  
+
   return { standardFields, customFields };
 };
 
@@ -4841,7 +5012,15 @@ export const exportBackupData = async (): Promise<BackupData> => {
         hasSyncConfig: !!(await AsyncStorage.getItem(STORAGE_KEYS.SYNC_CONFIG)),
       },
       // 同步服务器配置
-      syncConfig: JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.SYNC_CONFIG)) || 'null'),
+      syncConfig: safeJsonParseNullable<SyncConfig>(
+        await AsyncStorage.getItem(STORAGE_KEYS.SYNC_CONFIG),
+        'database.backup.syncConfig',
+        (value): value is SyncConfig =>
+          typeof value === 'object' &&
+          value !== null &&
+          typeof (value as SyncConfig).ip === 'string' &&
+          typeof (value as SyncConfig).port === 'string'
+      ),
     };
     return backup;
   } catch (error) {
@@ -4851,7 +5030,9 @@ export const exportBackupData = async (): Promise<BackupData> => {
 };
 
 // 导入备份数据
-export const importBackupData = async (backup: BackupData): Promise<{
+export const importBackupData = async (
+  backup: BackupData
+): Promise<{
   success: boolean;
   message: string;
   stats?: {
@@ -5078,12 +5259,12 @@ export const getTodayExportCount = async (type: ExportType): Promise<number> => 
     const database = getDb();
     const today = getLocalDateString();
     const key = `export_count_${type}_${today}`;
-    
+
     const result = await database.getFirstAsync<{ value: string }>(
       'SELECT value FROM system_config WHERE key = ?',
       [key]
     );
-    
+
     return result ? parseInt(result.value, 10) : 0;
   } catch (error) {
     console.error('获取导出统计失败:', error);
@@ -5100,10 +5281,10 @@ export const incrementExportCount = async (type: ExportType): Promise<number> =>
     const current = await getTodayExportCount(type);
     const nextCount = current + 1;
 
-    await database.runAsync(
-      'INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
-      [key, nextCount.toString()]
-    );
+    await database.runAsync('INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)', [
+      key,
+      nextCount.toString(),
+    ]);
 
     return nextCount;
   } catch (error) {
@@ -5150,7 +5331,7 @@ export const exportDatabaseFile = async (): Promise<{
     db = null;
 
     // 等待一下，确保文件写入完成
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const dbFilePath = getDatabaseFilePath();
 
@@ -5247,7 +5428,7 @@ export const importDatabaseFile = async (): Promise<{
     if (Platform.OS === 'android') {
       // Android 上使用多种 MIME 类型，提高兼容性
       documentType = [
-        '*/*',  // 允许所有文件
+        '*/*', // 允许所有文件
         'application/x-sqlite3',
         'application/vnd.sqlite3',
         'application/octet-stream',
@@ -5288,7 +5469,7 @@ export const importDatabaseFile = async (): Promise<{
     db = null;
 
     // 等待一下，确保数据库完全关闭
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const dbFilePath = getDatabaseFilePath();
     const dbBackupPath = `${dbFilePath}.backup`;
@@ -5335,7 +5516,7 @@ export const importDatabaseFile = async (): Promise<{
       return {
         success: true,
         message: '数据库文件恢复成功',
-        needRestart: true,  // 标记需要重启应用
+        needRestart: true, // 标记需要重启应用
         stats: {
           orders: orders?.count || 0,
           materials: materials?.count || 0,

@@ -43,8 +43,13 @@ import { Base64 } from 'js-base64';
 const PAYLOAD_KEY = '__safeRouterPayload__';
 const LOG_PREFIX = '[SafeRouter]';
 
+const isObjectPayload = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
 
-const getCurrentParams = (rawParams: Record<string, string | string[]>): Record<string, unknown> => {
+const getCurrentParams = (
+  rawParams: Record<string, string | string[]>
+): Record<string, unknown> => {
   const payload = rawParams[PAYLOAD_KEY];
   if (payload && typeof payload === 'string') {
     const decoded = deserializeParams<Record<string, unknown>>(payload);
@@ -61,8 +66,9 @@ const serializeParams = (params: Record<string, unknown>): string => {
     const jsonStr = JSON.stringify(params);
     return Base64.encode(jsonStr);
   } catch (error) {
-    console.error(LOG_PREFIX, 'serialize failed:', error instanceof Error ? error.message : 'Unknown error');
-    return '';
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(LOG_PREFIX, 'serialize failed:', message);
+    throw new Error(`${LOG_PREFIX} 参数序列化失败: ${message}`);
   }
 };
 
@@ -74,13 +80,21 @@ const deserializeParams = <T = Record<string, unknown>>(
   }
   try {
     const jsonStr = Base64.decode(payload);
-    return JSON.parse(jsonStr) as T;
+    const parsed = JSON.parse(jsonStr) as unknown;
+    if (!isObjectPayload(parsed)) {
+      console.error(LOG_PREFIX, 'deserialize failed: payload is not an object');
+      return null;
+    }
+    return parsed as T;
   } catch (error) {
-    console.error(LOG_PREFIX, 'deserialize failed:', error instanceof Error ? error.message : 'Unknown error');
+    console.error(
+      LOG_PREFIX,
+      'deserialize failed:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     return null;
   }
 };
-
 
 /**
  * 安全路由 Hook，用于页面跳转，代替 useRouter

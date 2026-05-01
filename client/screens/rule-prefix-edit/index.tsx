@@ -38,7 +38,7 @@ type FieldRow = {
 const getFieldMeta = (fieldKey: string, index: number, customFields: CustomField[]): FieldRow => {
   if (isCustomField(fieldKey)) {
     const fieldId = getCustomFieldId(fieldKey);
-    const customField = customFields.find(field => field.id === fieldId);
+    const customField = customFields.find((field) => field.id === fieldId);
     return {
       key: fieldKey,
       index,
@@ -105,25 +105,27 @@ export default function RulePrefixEditScreen() {
   );
 
   const fields = useMemo(() => {
-    return (rule?.fieldOrder || []).map((fieldKey, index) => getFieldMeta(fieldKey, index, customFields));
+    return (rule?.fieldOrder || []).map((fieldKey, index) =>
+      getFieldMeta(fieldKey, index, customFields)
+    );
   }, [customFields, rule?.fieldOrder]);
 
-  const configuredCount = fields.filter(field => prefixes[field.key]?.trim()).length;
+  const configuredCount = fields.filter((field) => prefixes[field.key]?.trim()).length;
 
-  const handleChangePrefix = (fieldKey: string, value: string) => {
-    setPrefixes(prev => ({
+  const handleChangePrefix = useCallback((fieldKey: string, value: string) => {
+    setPrefixes((prev) => ({
       ...prev,
       [fieldKey]: value,
     }));
-  };
+  }, []);
 
-  const handleClearField = (fieldKey: string) => {
-    setPrefixes(prev => {
+  const handleClearField = useCallback((fieldKey: string) => {
+    setPrefixes((prev) => {
       const next = { ...prev };
       delete next[fieldKey];
       return next;
     });
-  };
+  }, []);
 
   const handleClearAll = () => {
     showAlert(
@@ -146,19 +148,22 @@ export default function RulePrefixEditScreen() {
       return;
     }
 
-    const fieldKeys = new Set(fields.map(field => field.key));
-    const cleanedPrefixes = Object.entries(prefixes).reduce<FieldPrefixes>((acc, [fieldKey, value]) => {
-      const trimmedValue = value.trim();
-      if (fieldKeys.has(fieldKey) && trimmedValue) {
-        acc[fieldKey] = trimmedValue;
-      }
-      return acc;
-    }, {});
+    const fieldKeys = new Set(fields.map((field) => field.key));
+    const cleanedPrefixes = Object.entries(prefixes).reduce<FieldPrefixes>(
+      (acc, [fieldKey, value]) => {
+        const trimmedValue = value.trim();
+        if (fieldKeys.has(fieldKey) && trimmedValue) {
+          acc[fieldKey] = trimmedValue;
+        }
+        return acc;
+      },
+      {}
+    );
 
     setSaving(true);
     try {
       await updateRule(rule.id, { fieldPrefixes: cleanedPrefixes });
-      setRule(prev => prev ? { ...prev, fieldPrefixes: cleanedPrefixes } : prev);
+      setRule((prev) => (prev ? { ...prev, fieldPrefixes: cleanedPrefixes } : prev));
       setPrefixes(cleanedPrefixes);
       showAlert(
         '成功',
@@ -174,63 +179,112 @@ export default function RulePrefixEditScreen() {
     }
   };
 
-  const renderField = ({ item }: { item: FieldRow }) => {
-    const value = prefixes[item.key] || '';
-    const configured = value.trim().length > 0;
+  const renderField = useCallback(
+    ({ item }: { item: FieldRow }) => {
+      const value = prefixes[item.key] || '';
+      const configured = value.trim().length > 0;
 
-    return (
-      <View style={[styles.fieldCard, configured && styles.fieldCardConfigured]}>
-        <View style={styles.fieldHeader}>
-          <View style={[styles.fieldIndex, configured && styles.fieldIndexConfigured]}>
-            <Text style={[styles.fieldIndexText, configured && styles.fieldIndexTextConfigured]}>
-              {item.index + 1}
-            </Text>
+      return (
+        <View style={[styles.fieldCard, configured && styles.fieldCardConfigured]}>
+          <View style={styles.fieldHeader}>
+            <View style={[styles.fieldIndex, configured && styles.fieldIndexConfigured]}>
+              <Text style={[styles.fieldIndexText, configured && styles.fieldIndexTextConfigured]}>
+                {item.index + 1}
+              </Text>
+            </View>
+            <View style={styles.fieldTitleWrap}>
+              <Text style={styles.fieldLabel}>{item.label}</Text>
+              <Text style={styles.fieldSubtitle} numberOfLines={1}>
+                {item.subtitle}
+              </Text>
+            </View>
           </View>
-          <View style={styles.fieldTitleWrap}>
-            <Text style={styles.fieldLabel}>{item.label}</Text>
-            <Text style={styles.fieldSubtitle} numberOfLines={1}>{item.subtitle}</Text>
+
+          <View style={[styles.inputWrap, configured && styles.inputWrapConfigured]}>
+            <TextInput
+              style={styles.prefixInput}
+              value={value}
+              onChangeText={(text) => handleChangePrefix(item.key, text)}
+              placeholder="输入前缀（留空不配置）"
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {configured && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                activeOpacity={0.7}
+                onPress={() => handleClearField(item.key)}
+              >
+                <Text style={styles.clearButtonText}>清除</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      );
+    },
+    [
+      handleChangePrefix,
+      handleClearField,
+      prefixes,
+      styles.clearButton,
+      styles.clearButtonText,
+      styles.fieldCard,
+      styles.fieldCardConfigured,
+      styles.fieldHeader,
+      styles.fieldIndex,
+      styles.fieldIndexConfigured,
+      styles.fieldIndexText,
+      styles.fieldIndexTextConfigured,
+      styles.fieldLabel,
+      styles.fieldSubtitle,
+      styles.fieldTitleWrap,
+      styles.inputWrap,
+      styles.inputWrapConfigured,
+      styles.prefixInput,
+      theme.textMuted,
+    ]
+  );
+
+  const renderHeader = useCallback(
+    () => (
+      <View>
+        <View style={styles.ruleInfoCard}>
+          <Text style={styles.ruleName}>{rule?.name || '加载中'}</Text>
+          <Text style={styles.ruleDescription}>{rule?.description || '未填写规则描述'}</Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryText}>{fields.length} 个字段</Text>
+            <Text style={styles.summaryDot}>·</Text>
+            <Text style={styles.summaryText}>{configuredCount} 个已配置</Text>
           </View>
         </View>
 
-        <View style={[styles.inputWrap, configured && styles.inputWrapConfigured]}>
-          <TextInput
-            style={styles.prefixInput}
-            value={value}
-            onChangeText={text => handleChangePrefix(item.key, text)}
-            placeholder="输入前缀（留空不配置）"
-            placeholderTextColor={theme.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {configured && (
-            <TouchableOpacity style={styles.clearButton} activeOpacity={0.7} onPress={() => handleClearField(item.key)}>
-              <Text style={styles.clearButtonText}>清除</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.tipCard}>
+          <View style={styles.tipIcon}>
+            <Feather name="info" size={17} color={theme.success} />
+          </View>
+          <Text style={styles.tipText}>
+            为每个字段配置识别前缀，系统在解析时会自动去除这些前缀。
+          </Text>
         </View>
       </View>
-    );
-  };
-
-  const renderHeader = () => (
-    <View>
-      <View style={styles.ruleInfoCard}>
-        <Text style={styles.ruleName}>{rule?.name || '加载中'}</Text>
-        <Text style={styles.ruleDescription}>{rule?.description || '未填写规则描述'}</Text>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryText}>{fields.length} 个字段</Text>
-          <Text style={styles.summaryDot}>·</Text>
-          <Text style={styles.summaryText}>{configuredCount} 个已配置</Text>
-        </View>
-      </View>
-
-      <View style={styles.tipCard}>
-        <View style={styles.tipIcon}>
-          <Feather name="info" size={17} color={theme.success} />
-        </View>
-        <Text style={styles.tipText}>为每个字段配置识别前缀，系统在解析时会自动去除这些前缀。</Text>
-      </View>
-    </View>
+    ),
+    [
+      configuredCount,
+      fields.length,
+      rule?.description,
+      rule?.name,
+      styles.ruleInfoCard,
+      styles.ruleName,
+      styles.ruleDescription,
+      styles.summaryRow,
+      styles.summaryText,
+      styles.summaryDot,
+      styles.tipCard,
+      styles.tipIcon,
+      styles.tipText,
+      theme.success,
+    ]
   );
 
   return (
@@ -241,7 +295,11 @@ export default function RulePrefixEditScreen() {
       >
         <View style={[styles.container, { paddingTop: insets.top }]}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+            <TouchableOpacity
+              style={styles.backButton}
+              activeOpacity={0.7}
+              onPress={() => router.back()}
+            >
               <Feather name="arrow-left" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
             <Text style={styles.title}>编辑前缀</Text>
@@ -249,7 +307,7 @@ export default function RulePrefixEditScreen() {
 
           <FlatList
             data={fields}
-            keyExtractor={item => item.key}
+            keyExtractor={(item) => item.key}
             renderItem={renderField}
             ListHeaderComponent={renderHeader}
             ListEmptyComponent={
@@ -260,20 +318,26 @@ export default function RulePrefixEditScreen() {
                 </View>
               ) : null
             }
-            contentContainerStyle={[
-              styles.listContent,
-              { paddingBottom: insets.bottom + 120 },
-            ]}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 120 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           />
 
           {rule && (
             <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TouchableOpacity style={styles.clearAllButton} activeOpacity={0.72} onPress={handleClearAll}>
+              <TouchableOpacity
+                style={styles.clearAllButton}
+                activeOpacity={0.72}
+                onPress={handleClearAll}
+              >
                 <Text style={styles.clearAllButtonText}>清空全部</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} activeOpacity={0.72} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity
+                style={styles.saveButton}
+                activeOpacity={0.72}
+                onPress={handleSave}
+                disabled={saving}
+              >
                 <Text style={styles.saveButtonText}>{saving ? '保存中...' : '保存配置'}</Text>
               </TouchableOpacity>
             </View>

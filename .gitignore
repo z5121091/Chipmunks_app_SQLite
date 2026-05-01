@@ -11,3 +11,8 @@ logs/
 *.tsbuildinfo
 node-compile-cache/
 *.swp
+.env
+.env.*
+!.env.example
+*.local
+sync-data/

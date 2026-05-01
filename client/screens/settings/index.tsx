@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import * as Updates from 'expo-updates';  // 添加重启功能
+import * as Updates from 'expo-updates'; // 添加重启功能
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -53,22 +53,48 @@ import { Feather } from '@expo/vector-icons';
 import { useCustomAlert } from '@/components/CustomAlert';
 import { rs } from '@/utils/responsive';
 import { APP_VERSION, APP_NAME, COMPANY_NAME, COMPANY_WEBSITE, AUTHOR } from '@/constants/version';
-import { feedbackSuccess, feedbackWarning, setSoundEnabled as setSoundEnabledFn, initSoundSetting } from '@/utils/feedback';
+import {
+  feedbackSuccess,
+  feedbackWarning,
+  setSoundEnabled as setSoundEnabledFn,
+  initSoundSetting,
+} from '@/utils/feedback';
 import { syncExcelToComputer, ExcelSheet } from '@/utils/excel';
 import { safeJsonParseNullable } from '@/utils/json';
-import { 
-  testConnection 
-} from '@/utils/heartbeat';
-import {
-  UPDATE_CONFIG,
-  NETWORK_CONFIG,
-  SyncConfig,
-  ConnectionStatus,
-} from '@/constants/config';
+import { testConnection } from '@/utils/heartbeat';
+import { UPDATE_CONFIG, NETWORK_CONFIG, SyncConfig, ConnectionStatus } from '@/constants/config';
 import { parseAuthFromUrl, base64Encode, compareVersions } from '@/utils/update';
+import { parseQuantity } from '@/utils/quantity';
 
 // 使用 any 绕过类型检查
 const FileSystem = FileSystemLegacy as any;
+
+const isSyncConfig = (value: unknown): value is SyncConfig => {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as SyncConfig).ip === 'string' &&
+    typeof (value as SyncConfig).port === 'string'
+  );
+};
+
+const isBackupData = (value: unknown): value is BackupData => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<BackupData>;
+  return (
+    typeof candidate.backupTime === 'string' &&
+    (candidate.rules === undefined || Array.isArray(candidate.rules)) &&
+    (candidate.customFields === undefined || Array.isArray(candidate.customFields)) &&
+    (candidate.inventoryBindings === undefined || Array.isArray(candidate.inventoryBindings)) &&
+    (candidate.warehouses === undefined || Array.isArray(candidate.warehouses)) &&
+    (candidate.syncConfig === undefined ||
+      candidate.syncConfig === null ||
+      isSyncConfig(candidate.syncConfig))
+  );
+};
 
 // 更新服务器配置（请修改为你的NAS地址）
 // 完整URL（含认证信息），兼容Android 7.0
@@ -89,23 +115,26 @@ export default function SettingsScreen() {
     // 延迟初始化声音设置，避免阻塞页面渲染
     const timer = setTimeout(() => {
       initSoundSetting();
-    }, 100);  // 延迟 100ms，先完成页面渲染
+    }, 100); // 延迟 100ms，先完成页面渲染
 
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setScreenWidth(window.width);
       setScreenHeight(window.height);
     });
     return () => {
-      clearTimeout(timer);  // 清理定时器
+      clearTimeout(timer); // 清理定时器
       subscription?.remove();
     };
   }, []);
 
   // 根据屏幕尺寸动态创建样式
-  const styles = useMemo(() => createStyles(theme, screenHeight, insets), [theme, screenHeight, insets]);
-  
+  const styles = useMemo(
+    () => createStyles(theme, screenHeight, insets),
+    [theme, screenHeight, insets]
+  );
+
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  
+
   // 配置统计
   const [configStats, setConfigStats] = useState({
     rules: 0,
@@ -122,16 +151,16 @@ export default function SettingsScreen() {
   // 电脑同步配置
   const [syncConfig, setSyncConfig] = useState<SyncConfig>({ ip: '', port: '8080' });
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('idle');
-  
+
   // 声音开关
   const [soundEnabled, setSoundEnabled] = useState(true);
-  
+
   // 各数据类型的同步状态
   const [syncingInbound, setSyncingInbound] = useState(false);
   const [syncingOutbound, setSyncingOutbound] = useState(false);
   const [syncingInventory, setSyncingInventory] = useState(false);
   const [syncingLabels, setSyncingLabels] = useState(false);
-  
+
   // 在线更新相关状态
   const [updateServerUrl, setUpdateServerUrl] = useState(DEFAULT_UPDATE_SERVER);
   const [updateServerDisplayUrl, setUpdateServerDisplayUrl] = useState(DEFAULT_UPDATE_SERVER); // 用于显示，隐藏认证信息
@@ -146,15 +175,21 @@ export default function SettingsScreen() {
     changelog: string;
     forceUpdate: boolean;
   } | null>(null);
-  
+
   // 心跳检测相关
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const failureCountRef = useRef(0);
-  const downloadProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
+  const failureCountRef = useRef<number>(0);
+
   // 加载数据
   const loadData = useCallback(async () => {
-    const [fieldsData, stats, savedSyncConfig, savedConnectionStatus, savedUpdateServer, savedSoundEnabled] = await Promise.all([
+    const [
+      fieldsData,
+      stats,
+      savedSyncConfig,
+      savedConnectionStatus,
+      savedUpdateServer,
+      savedSoundEnabled,
+    ] = await Promise.all([
       getAllCustomFields(),
       getConfigStats(),
       AsyncStorage.getItem(STORAGE_KEYS.SYNC_CONFIG),
@@ -164,24 +199,28 @@ export default function SettingsScreen() {
     ]);
     setCustomFields(fieldsData);
     setConfigStats(stats);
-    
+
     // 加载声音开关状态，默认为 true
     if (savedSoundEnabled !== null) {
       setSoundEnabled(savedSoundEnabled === 'true');
     }
-    
+
     if (savedUpdateServer) {
       setUpdateServerUrl(savedUpdateServer);
       setUpdateServerDisplayUrl(extractDisplayUrl(savedUpdateServer));
     }
     if (savedSyncConfig) {
-      const config = safeJsonParseNullable<SyncConfig>(savedSyncConfig, 'settings.syncConfig');
+      const config = safeJsonParseNullable<SyncConfig>(
+        savedSyncConfig,
+        'settings.syncConfig',
+        isSyncConfig
+      );
       if (!config) {
         setConnectionStatus('idle');
         return;
       }
       setSyncConfig(config);
-      
+
       // 如果之前是已连接状态，自动验证连接
       if (savedConnectionStatus === 'success' && config.ip) {
         setConnectionStatus('testing');
@@ -192,43 +231,39 @@ export default function SettingsScreen() {
       }
     }
   }, []);
-  
+
   // 切换声音开关
   const toggleSound = useCallback(async (value: boolean) => {
     setSoundEnabled(value);
     setSoundEnabledFn(value);
     await AsyncStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(value));
   }, []);
-  
+
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
-  
-  // 心跳检测
-  useEffect(() => {
-    if (connectionStatus === 'success' && syncConfig.ip) {
-      startHeartbeat();
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current) {
+      clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
     }
-    return () => stopHeartbeat();
-  }, [connectionStatus, syncConfig.ip]);
-  
-  const startHeartbeat = () => {
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
     stopHeartbeat();
     failureCountRef.current = 0;
-    
+    const targetUrl = `http://${syncConfig.ip}:${syncConfig.port || NETWORK_CONFIG.DEFAULT_PORT}/health`;
+
     heartbeatTimerRef.current = setInterval(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), NETWORK_CONFIG.HEARTBEAT_TIMEOUT);
+
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), NETWORK_CONFIG.HEARTBEAT_TIMEOUT);
-        
-        const response = await fetch(
-          `http://${syncConfig.ip}:${syncConfig.port || NETWORK_CONFIG.DEFAULT_PORT}/health`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-        
+        const response = await fetch(targetUrl, { signal: controller.signal });
+
         if (response.ok) {
           failureCountRef.current = 0;
         } else {
@@ -236,22 +271,25 @@ export default function SettingsScreen() {
         }
       } catch {
         failureCountRef.current++;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      
+
       if (failureCountRef.current >= NETWORK_CONFIG.MAX_FAILURE_COUNT) {
         setConnectionStatus('disconnected');
         await AsyncStorage.setItem(STORAGE_KEYS.CONNECTION_STATUS, 'disconnected');
         stopHeartbeat();
       }
     }, NETWORK_CONFIG.HEARTBEAT_INTERVAL);
-  };
-  
-  const stopHeartbeat = () => {
-    if (heartbeatTimerRef.current) {
-      clearInterval(heartbeatTimerRef.current);
-      heartbeatTimerRef.current = null;
+  }, [stopHeartbeat, syncConfig.ip, syncConfig.port]);
+
+  // 心跳检测
+  useEffect(() => {
+    if (connectionStatus === 'success' && syncConfig.ip) {
+      startHeartbeat();
     }
-  };
+    return () => stopHeartbeat();
+  }, [connectionStatus, startHeartbeat, stopHeartbeat, syncConfig.ip]);
 
   const clearLocalDraftStorage = useCallback(async () => {
     await AsyncStorage.multiRemove([
@@ -264,26 +302,26 @@ export default function SettingsScreen() {
       STORAGE_KEYS.OUTBOUND_SCAN_RECORDS,
     ]);
   }, []);
-  
+
   // IP变更
   const handleIpChange = (text: string) => {
-    setSyncConfig(prev => ({ ...prev, ip: text }));
+    setSyncConfig((prev) => ({ ...prev, ip: text }));
     setConnectionStatus('idle');
   };
-  
+
   // 端口变更
   const handlePortChange = (text: string) => {
-    setSyncConfig(prev => ({ ...prev, port: text }));
+    setSyncConfig((prev) => ({ ...prev, port: text }));
     setConnectionStatus('idle');
   };
-  
+
   // 测试连接
   const handleTestConnection = async () => {
     if (!syncConfig.ip) {
       alert.showWarning('请输入服务器地址');
       return;
     }
-    
+
     setConnectionStatus('testing');
     const success = await testConnection(syncConfig);
     const status: ConnectionStatus = success ? 'success' : 'error';
@@ -293,7 +331,7 @@ export default function SettingsScreen() {
       AsyncStorage.setItem(STORAGE_KEYS.CONNECTION_STATUS, status),
     ]);
   };
-  
+
   // 生成 Excel 并同步到电脑（支持多Sheet）
   const syncToComputerMultiSheet = async (
     sheets: Array<{
@@ -315,7 +353,7 @@ export default function SettingsScreen() {
         (path) => alert.showSuccess(`同步成功！\n路径: ${path}`),
         (error) => alert.showError(error)
       );
-      
+
       if (!result.success && result.message) {
         alert.showError(result.message);
       }
@@ -325,7 +363,7 @@ export default function SettingsScreen() {
       setLoading(false);
     }
   };
-  
+
   // 同步入库单（包含所有扩展字段）
   const handleSyncInbound = async () => {
     const records = await getAllInboundRecords();
@@ -343,11 +381,23 @@ export default function SettingsScreen() {
 
       // 入库明细表
       const detailHeaders = [
-        '入库单号', '仓库名称', '存货编码', '扫描型号', '批次', '数量', '版本号', '封装',
-        '生产日期', '追溯码', '箱号', '入库日期', '备注', '创建时间'
+        '入库单号',
+        '仓库名称',
+        '存货编码',
+        '扫描型号',
+        '批次',
+        '数量',
+        '版本号',
+        '封装',
+        '生产日期',
+        '追溯码',
+        '箱号',
+        '入库日期',
+        '备注',
+        '创建时间',
       ];
 
-      const detailRows = records.map(r => [
+      const detailRows = records.map((r) => [
         r.inbound_no || '',
         r.warehouse_name || '',
         r.inventory_code || '',
@@ -365,8 +415,9 @@ export default function SettingsScreen() {
       ]);
 
       // 获取唯一仓库名称列表，文件名加入序号
-      const warehouses = [...new Set(records.map(r => r.warehouse_name).filter(Boolean))];
-      const warehouseSuffix = warehouses.length === 1 ? warehouses[0] : (warehouses.length > 1 ? '多仓库' : '');
+      const warehouses = [...new Set(records.map((r) => r.warehouse_name).filter(Boolean))];
+      const warehouseSuffix =
+        warehouses.length === 1 ? warehouses[0] : warehouses.length > 1 ? '多仓库' : '';
       const nameSuffix = warehouseSuffix ? `${warehouseSuffix}_${seqNo}` : seqNo;
 
       await syncToComputerMultiSheet(
@@ -380,22 +431,34 @@ export default function SettingsScreen() {
       setSyncingInbound(false);
     }
   };
-  
+
   // 同步出库单（扫码出库的物料信息）
   const handleSyncOutbound = async () => {
     const records = await getAllMaterials();
-    
+
     // 获取当天的导出序号（按天递增）
     const todayCount = await incrementExportCount('outbound');
     const seqNo = String(todayCount).padStart(2, '0');
-    
+
     // 调整列顺序：生产日期放在封装后面（与入库单一致）
     const headers = [
-      '订单号', '客户', '仓库名称', '存货编码', '型号', '批次', '封装', '生产日期', '版本',
-      '数量', '追踪码', '箱号', '扫描日期', '扫描时间'
+      '订单号',
+      '客户',
+      '仓库名称',
+      '存货编码',
+      '型号',
+      '批次',
+      '封装',
+      '生产日期',
+      '版本',
+      '数量',
+      '追踪码',
+      '箱号',
+      '扫描日期',
+      '扫描时间',
     ];
-    
-    const rows = records.map(r => [
+
+    const rows = records.map((r) => [
       r.order_no || '',
       r.customer_name || '',
       r.warehouse_name || '',
@@ -405,16 +468,17 @@ export default function SettingsScreen() {
       r.package || '',
       r.productionDate || '',
       r.version || '',
-      parseInt(String(r.quantity), 10) || 0,
+      parseQuantity(r.quantity, { min: 0 }) ?? 0,
       r.traceNo || '',
       r.sourceNo || '',
       formatDate(r.scanned_at),
       formatTime(r.scanned_at),
     ]);
-    
+
     // 获取唯一仓库名称列表，文件名加入序号
-    const warehouses = [...new Set(records.map(r => r.warehouse_name).filter(Boolean))];
-    const warehouseSuffix = warehouses.length === 1 ? warehouses[0] : (warehouses.length > 1 ? '多仓库' : '');
+    const warehouses = [...new Set(records.map((r) => r.warehouse_name).filter(Boolean))];
+    const warehouseSuffix =
+      warehouses.length === 1 ? warehouses[0] : warehouses.length > 1 ? '多仓库' : '';
     const nameSuffix = warehouseSuffix ? `${warehouseSuffix}_${seqNo}` : seqNo;
 
     await syncToComputerMultiSheet(
@@ -424,36 +488,44 @@ export default function SettingsScreen() {
       nameSuffix
     );
   };
-  
+
   // 同步盘点单
   const handleSyncInventory = async () => {
     const records = await getAllInventoryCheckRecords();
-    
+
     // 获取当天的导出序号（按天递增）
     const todayCount = await incrementExportCount('inventory');
     const seqNo = String(todayCount).padStart(2, '0');
-    
+
     const headers = [
-      '盘点单号', '仓库名称', '存货编码', '扫描型号', '实盘数量', '盘点类型', '盘点日期', '创建时间'
+      '盘点单号',
+      '仓库名称',
+      '存货编码',
+      '扫描型号',
+      '实盘数量',
+      '盘点类型',
+      '盘点日期',
+      '创建时间',
     ];
-    
-    const rows = records.map(r => [
+
+    const rows = records.map((r) => [
       r.check_no || '',
       r.warehouse_name || '',
       r.inventory_code || '',
       r.scan_model || '',
       // 拆包盘点用实际数量，整包盘点用原数量
-      r.check_type === 'partial' ? (r.actual_quantity || r.quantity) : r.quantity,
+      r.check_type === 'partial' ? r.actual_quantity || r.quantity : r.quantity,
       r.check_type === 'whole' ? '整包' : '拆包',
       r.check_date || '',
       formatDateTimeExport(r.created_at),
     ]);
-    
+
     // 获取唯一仓库名称列表，文件名加入序号
-    const warehouses = [...new Set(records.map(r => r.warehouse_name).filter(Boolean))];
-    const warehouseSuffix = warehouses.length === 1 ? warehouses[0] : (warehouses.length > 1 ? '多仓库' : '');
+    const warehouses = [...new Set(records.map((r) => r.warehouse_name).filter(Boolean))];
+    const warehouseSuffix =
+      warehouses.length === 1 ? warehouses[0] : warehouses.length > 1 ? '多仓库' : '';
     const nameSuffix = warehouseSuffix ? `${warehouseSuffix}_${seqNo}` : seqNo;
-    
+
     await syncToComputerMultiSheet(
       [{ name: '盘点明细', headers, rows }],
       '/inventory',
@@ -461,27 +533,38 @@ export default function SettingsScreen() {
       nameSuffix
     );
   };
-  
+
   // 导出盘点拆包标签
   const [syncingInventoryPartial, setSyncingInventoryPartial] = useState(false);
   const handleSyncInventoryPartial = async () => {
     // 只获取拆包类型的盘点记录
     const allRecords = await getAllInventoryCheckRecords();
-    const records = allRecords.filter(r => r.check_type === 'partial');
-    
+    const records = allRecords.filter((r) => r.check_type === 'partial');
+
     if (records.length === 0) {
       alert.showWarning('暂无盘点拆包记录');
       return;
     }
-    
+
     setSyncingInventoryPartial(true);
     try {
       const headers = [
-        '盘点单号', '仓库名称', '存货编码', '扫描型号', '批次', '封装', '版本',
-        '实际数量', '生产日期', '追踪码', '箱号', '盘点日期', '创建时间'
+        '盘点单号',
+        '仓库名称',
+        '存货编码',
+        '扫描型号',
+        '批次',
+        '封装',
+        '版本',
+        '实际数量',
+        '生产日期',
+        '追踪码',
+        '箱号',
+        '盘点日期',
+        '创建时间',
       ];
-      
-      const rows = records.map(r => [
+
+      const rows = records.map((r) => [
         r.check_no || '',
         r.warehouse_name || '',
         r.inventory_code || '',
@@ -496,7 +579,7 @@ export default function SettingsScreen() {
         r.check_date || '',
         formatDateTimeExport(r.created_at),
       ]);
-      
+
       await syncToComputerMultiSheet(
         [{ name: '拆包标签', headers, rows }],
         '/inventory',
@@ -508,17 +591,31 @@ export default function SettingsScreen() {
       setSyncingInventoryPartial(false);
     }
   };
-  
+
   // 同步标签数据（原有拆包记录）
   const handleSyncLabels = async () => {
     const records = await getAllUnpackRecords();
-    
+
     const headers = [
-      '仓库名称', '标签类型', '订单号', '客户', '型号', '存货编码', '批次', '封装', '版本',
-      '原数量', '标签数量', '生产日期', '追踪码', '箱号', '拆包时间', '备注'
+      '仓库名称',
+      '标签类型',
+      '订单号',
+      '客户',
+      '型号',
+      '存货编码',
+      '批次',
+      '封装',
+      '版本',
+      '原数量',
+      '标签数量',
+      '生产日期',
+      '追踪码',
+      '箱号',
+      '拆包时间',
+      '备注',
     ];
-    
-    const rows = records.map(r => [
+
+    const rows = records.map((r) => [
       r.warehouse_name || '',
       r.label_type === 'shipped' ? '发货标签' : '剩余标签',
       r.order_no || '',
@@ -528,24 +625,24 @@ export default function SettingsScreen() {
       r.batch || '',
       r.package || '',
       r.version || '',
-      parseInt(r.original_quantity, 10) || 0,
-      parseInt(r.new_quantity, 10) || 0,
+      parseQuantity(r.original_quantity, { min: 0 }) ?? 0,
+      parseQuantity(r.new_quantity, { min: 0 }) ?? 0,
       r.productionDate || '',
-      r.label_type === 'shipped' ? (r.new_traceNo || r.traceNo || '') : (r.traceNo || ''),
+      r.label_type === 'shipped' ? r.new_traceNo || r.traceNo || '' : r.traceNo || '',
       r.sourceNo || '',
       formatTime(r.unpacked_at),
       r.notes || '',
     ]);
-    
+
     await syncToComputerMultiSheet(
       [{ name: '标签明细', headers, rows }],
       '/labels',
       setSyncingLabels
     );
   };
-  
+
   // ==================== 在线更新功能 ====================
-  
+
   // 获取更新服务器URL（兼容旧格式）
   const getUpdateServerUrl = (): string => {
     // 如果保存的URL包含@符号（旧格式），使用默认URL
@@ -554,7 +651,7 @@ export default function SettingsScreen() {
     }
     return updateServerUrl;
   };
-  
+
   // 从URL中提取不含认证信息的显示用URL
   const extractDisplayUrl = (url: string): string => {
     try {
@@ -568,39 +665,37 @@ export default function SettingsScreen() {
       return url;
     }
   };
-  
+
   // 检查更新
   const checkForUpdate = async () => {
     if (checkingUpdate) return;
-    
+
     setCheckingUpdate(true);
     try {
       const baseUrl = getUpdateServerUrl();
       const versionUrl = `${baseUrl}/version.json`;
-      
-      
+
       // 解析URL中的认证信息
       const authInfo = parseAuthFromUrl(baseUrl);
       const headers: Record<string, string> = {
         'Cache-Control': 'no-cache',
       };
-      
+
       // 如果URL包含认证信息，添加Authorization头
       if (authInfo) {
         const authString = `${authInfo.username}:${authInfo.password}`;
         const authBase64 = base64Encode(authString);
         headers['Authorization'] = `Basic ${authBase64}`;
       }
-      
+
       const response = await fetch(versionUrl, {
         method: 'GET',
         headers,
       });
-      
-      
+
       if (!response.ok) {
         let errorMessage = `无法连接到更新服务器 (${response.status})`;
-        
+
         if (response.status === 401) {
           errorMessage = '认证失败，请检查服务器地址中的用户名和密码是否正确';
         } else if (response.status === 403) {
@@ -610,27 +705,28 @@ export default function SettingsScreen() {
         } else {
           errorMessage = `无法连接到更新服务器 (${response.status})，请检查网络和服务器地址`;
         }
-        
+
         alert.showError(errorMessage);
         return;
       }
-      
+
       const data = await response.json();
-      
+
       // 比较版本号
       const currentVersion = APP_VERSION.replace(/^V/, '');
       const latestVersion = (data.version || '0.0.0').replace(/^V/, '');
-      
+
       const isNewVersion = compareVersions(latestVersion, currentVersion) > 0;
-      
+
       if (isNewVersion) {
         // 处理 changelog：可能是数组（旧格式）或对象数组（新格式）
         let changelogText = '优化用户体验';
         if (Array.isArray(data.changelog)) {
           // 新格式：数组 [{version, date, changes}]
-          changelogText = data.changelog[0]?.changes
-            ?.map((c: { type: string; text: string }) => `${c.text}`)
-            .join('\n') || '优化用户体验';
+          changelogText =
+            data.changelog[0]?.changes
+              ?.map((c: { type: string; text: string }) => `${c.text}`)
+              .join('\n') || '优化用户体验';
         } else if (typeof data.changelog === 'string') {
           // 旧格式：字符串
           changelogText = data.changelog;
@@ -653,24 +749,24 @@ export default function SettingsScreen() {
       setCheckingUpdate(false);
     }
   };
-  
+
   // 下载并安装更新
   const downloadAndInstall = async () => {
     if (!updateInfo || downloading) return;
-    
+
     // Android 平台检查
     if (Platform.OS !== 'android') {
       alert.showError('目前仅支持 Android 系统更新');
       return;
     }
-    
+
     setDownloading(true);
     setDownloadProgress(0);
-    
+
     try {
       // 下载目录：使用应用缓存目录
       let apkUri: string;
-      
+
       if (FileSystem.cacheDirectory) {
         apkUri = FileSystem.cacheDirectory + 'ZhongCangWarehouse_update.apk';
       } else if (FileSystem.documentDirectory) {
@@ -680,27 +776,31 @@ export default function SettingsScreen() {
         setDownloading(false);
         return;
       }
-      
+
       // 清理之前的下载
       await FileSystem.deleteAsync(apkUri, { idempotent: true });
-      
+
       // 创建下载回调
-      const downloadCallback = (downloadProgressData: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
-        const progress = downloadProgressData.totalBytesWritten / downloadProgressData.totalBytesExpectedToWrite;
+      const downloadCallback = (downloadProgressData: {
+        totalBytesWritten: number;
+        totalBytesExpectedToWrite: number;
+      }) => {
+        const progress =
+          downloadProgressData.totalBytesWritten / downloadProgressData.totalBytesExpectedToWrite;
         setDownloadProgress(Math.round(progress * 100));
       };
-      
+
       // 解析URL中的认证信息
       const downloadUrl = updateInfo.downloadUrl;
       const authInfo = parseAuthFromUrl(downloadUrl);
       const downloadHeaders: Record<string, string> = {};
-      
+
       if (authInfo) {
         const authString = `${authInfo.username}:${authInfo.password}`;
         const authBase64 = base64Encode(authString);
         downloadHeaders['Authorization'] = `Basic ${authBase64}`;
       }
-      
+
       // 开始下载
       const downloadResumable = FileSystem.createDownloadResumable(
         downloadUrl,
@@ -708,13 +808,13 @@ export default function SettingsScreen() {
         { headers: downloadHeaders },
         downloadCallback
       );
-      
+
       const result = await downloadResumable.downloadAsync();
-      
+
       if (result && result.uri) {
         // 下载完成
         setDownloadProgress(100);
-        
+
         // 使用 Sharing 分享，让用户选择保存或安装
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(result.uri, {
@@ -726,7 +826,7 @@ export default function SettingsScreen() {
         } else {
           alert.showError('分享功能不可用，请检查存储权限');
         }
-        
+
         setDownloading(false);
       } else {
         alert.showError('下载失败，请重试');
@@ -739,14 +839,13 @@ export default function SettingsScreen() {
     }
   };
 
-  
   // 保存更新服务器地址
   const saveUpdateServer = async () => {
     if (!updateServerDisplayUrl.trim()) {
       alert.showError('服务器地址不能为空');
       return;
     }
-    
+
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.UPDATE_SERVER_URL, updateServerDisplayUrl.trim());
       setUpdateServerUrl(updateServerDisplayUrl.trim());
@@ -757,30 +856,30 @@ export default function SettingsScreen() {
       alert.showError('保存失败');
     }
   };
-  
+
   // 数据备份
   const handleBackup = async () => {
     if (backupLoading) return;
-    
+
     setBackupLoading(true);
     try {
       const backupData = await exportBackupData();
       const backupJson = JSON.stringify(backupData, null, 2);
-      
+
       const now = new Date();
       const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
       const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
       const fileName = `掌上仓库备份_${dateStr}_${timeStr}.json`;
-      
+
       const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-      
+
       await FileSystem.writeAsStringAsync(filePath, backupJson, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      
+
       // 检测 Android 版本（API 26 = Android 8.0）
       const isAndroid8OrAbove = Platform.OS === 'android' && Platform.Version >= 26;
-      
+
       if (isAndroid8OrAbove) {
         // Android 8.0+：直接使用 Sharing 分享
         if (await Sharing.isAvailableAsync()) {
@@ -789,7 +888,9 @@ export default function SettingsScreen() {
             dialogTitle: '保存配置备份',
             UTI: 'public.json',
           });
-          alert.showSuccess(`已备份配置:\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}\n\n请妥善保管备份文件！`);
+          alert.showSuccess(
+            `已备份配置:\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}\n\n请妥善保管备份文件！`
+          );
         }
       } else {
         // Android 7.0 及以下：保存到 Downloads 文件夹
@@ -815,33 +916,36 @@ export default function SettingsScreen() {
           // 获取 Downloads 相册
           try {
             const albums = await MediaLibrary.getAlbumsAsync();
-            let downloadAlbum = albums.find((album: any) => 
-              album.title === 'Download' || album.title === 'Downloads'
+            let downloadAlbum = albums.find(
+              (album: any) => album.title === 'Download' || album.title === 'Downloads'
             );
-            
+
             if (!downloadAlbum) {
               downloadAlbum = await MediaLibrary.createAlbumAsync('Downloads', asset, false);
             } else {
               await MediaLibrary.addAssetsToAlbumAsync([asset], downloadAlbum.id, false);
             }
-          } catch (albumError) {
-          }
+          } catch (albumError) {}
 
           // 尝试打开 Downloads 文件夹
           try {
             await Linking.openURL('content://downloads/all_downloads');
           } catch {
             try {
-              await Linking.openURL('content://com.android.providers.downloads.documents/root/downloads');
+              await Linking.openURL(
+                'content://com.android.providers.downloads.documents/root/downloads'
+              );
             } catch {
               // 都打不开就算了
             }
           }
 
-          alert.showSuccess(`备份已保存到 Downloads 文件夹:\n${fileName}\n\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}`);
+          alert.showSuccess(
+            `备份已保存到 Downloads 文件夹:\n${fileName}\n\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}`
+          );
         } catch (mediaError) {
           console.error('保存到Downloads失败:', mediaError);
-          
+
           // 备选方案：使用 Sharing
           if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(filePath, {
@@ -849,7 +953,9 @@ export default function SettingsScreen() {
               dialogTitle: '保存配置备份',
               UTI: 'public.json',
             });
-            alert.showSuccess(`已备份配置:\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}`);
+            alert.showSuccess(
+              `已备份配置:\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}`
+            );
           } else {
             alert.showError('备份失败，请重试');
           }
@@ -862,45 +968,51 @@ export default function SettingsScreen() {
       setBackupLoading(false);
     }
   };
-  
+
   // 数据恢复
   const handleRestore = async () => {
     if (restoreLoading) return;
-    
+
     try {
       // Android 7.0 及以下不支持 application/json 类型，使用 */* 替代
-      const isAndroid7OrBelow = Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version <= 24;
+      const isAndroid7OrBelow =
+        Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version <= 24;
       const documentType = isAndroid7OrBelow ? '*/*' : 'application/json';
-      
+
       const result = await DocumentPicker.getDocumentAsync({
         type: documentType,
         copyToCacheDirectory: true,
       });
-      
+
       if (result.canceled || !result.assets || result.assets.length === 0) {
         return;
       }
-      
+
       const fileUri = result.assets[0].uri;
-      
+
       // 如果选择的是所有文件，需要检查扩展名
       if (isAndroid7OrBelow && !fileUri.toLowerCase().endsWith('.json')) {
         alert.showWarning('请选择 .json 格式的备份文件');
         return;
       }
-      
+
       const fileContent = await FileSystem.readAsStringAsync(fileUri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      
+
       let backupData: BackupData;
-      try {
-        backupData = JSON.parse(fileContent);
-      } catch (e) {
+      const parsedBackupData = safeJsonParseNullable<BackupData>(
+        fileContent,
+        'settings.backupFile',
+        isBackupData
+      );
+
+      if (!parsedBackupData) {
         alert.showError('无效的备份文件格式');
         return;
       }
-      
+      backupData = parsedBackupData;
+
       alert.showConfirm(
         '确认恢复配置',
         `备份时间: ${formatDateTimeExport(backupData.backupTime)}\n\n即将恢复以下配置:\n• 解析规则: ${backupData.rules?.length || 0} 条\n• 自定义字段: ${backupData.customFields?.length || 0} 个\n• 物料绑定: ${backupData.inventoryBindings?.length || 0} 条\n• 仓库: ${backupData.warehouses?.length || 0} 个\n• 同步服务器: ${backupData.syncConfig ? backupData.syncConfig.ip : '未配置'}\n\n[注意] 恢复前会清空当前所有配置数据（规则、字段、绑定、仓库等），业务数据（订单、物料、拆包记录等）不受影响！此操作不可撤销！`,
@@ -909,7 +1021,9 @@ export default function SettingsScreen() {
           try {
             const result = await importBackupData(backupData);
             if (result.success) {
-              alert.showSuccess(`备份时间: ${formatDateTimeExport(backupData.backupTime)}\n\n恢复成功:\n• 解析规则: ${result.stats?.rules || 0} 条\n• 自定义字段: ${result.stats?.customFields || 0} 个\n• 物料绑定: ${result.stats?.inventoryBindings || 0} 条\n• 仓库: ${result.stats?.warehouses || 0} 个\n• 同步服务器: ${result.stats?.hasSyncConfig ? '已恢复' : '未配置'}`);
+              alert.showSuccess(
+                `备份时间: ${formatDateTimeExport(backupData.backupTime)}\n\n恢复成功:\n• 解析规则: ${result.stats?.rules || 0} 条\n• 自定义字段: ${result.stats?.customFields || 0} 个\n• 物料绑定: ${result.stats?.inventoryBindings || 0} 条\n• 仓库: ${result.stats?.warehouses || 0} 个\n• 同步服务器: ${result.stats?.hasSyncConfig ? '已恢复' : '未配置'}`
+              );
               loadData();
             } else {
               alert.showError(result.message);
@@ -1008,8 +1122,8 @@ export default function SettingsScreen() {
             } finally {
               setDbRestoreLoading(false);
             }
-          }
-        }
+          },
+        },
       ],
       'error'
     );
@@ -1017,7 +1131,7 @@ export default function SettingsScreen() {
 
   // 是否可以同步
   const canSync = syncConfig.ip && connectionStatus === 'success';
-  
+
   // 渲染菜单卡片
   const renderMenuCard = (
     title: string,
@@ -1029,8 +1143,8 @@ export default function SettingsScreen() {
     loading?: boolean,
     rightText?: string
   ) => (
-    <AnimatedCard 
-      onPress={onPress} 
+    <AnimatedCard
+      onPress={onPress}
       disabled={disabled || loading}
       style={disabled ? styles.exportCardDisabled : undefined}
     >
@@ -1044,9 +1158,7 @@ export default function SettingsScreen() {
             )}
           </View>
           <View style={styles.exportInfo}>
-            <Text style={styles.exportTitle}>
-              {loading ? '处理中...' : title}
-            </Text>
+            <Text style={styles.exportTitle}>{loading ? '处理中...' : title}</Text>
             <Text style={styles.exportDesc}>{desc}</Text>
           </View>
           {rightText ? (
@@ -1058,7 +1170,7 @@ export default function SettingsScreen() {
       </View>
     </AnimatedCard>
   );
-  
+
   // 渲染开关设置项
   const renderSwitchCard = (
     title: string,
@@ -1088,39 +1200,39 @@ export default function SettingsScreen() {
       </View>
     </AnimatedCard>
   );
-  
+
   return (
     <Screen backgroundColor={theme.backgroundRoot} statusBarStyle={isDark ? 'light' : 'dark'}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
-        removeClippedSubviews={true}  // 移除屏幕外的子视图，减少内存占用
-        scrollEventThrottle={16}  // 控制滚动事件频率（16ms ≈ 60fps）
-        decelerationRate="normal"  // 正常减速率，改善滑动手感
-        directionalLockEnabled={true}  // 锁定滚动方向，提升跟手性
+        removeClippedSubviews={true} // 移除屏幕外的子视图，减少内存占用
+        scrollEventThrottle={16} // 控制滚动事件频率（16ms ≈ 60fps）
+        decelerationRate="normal" // 正常减速率，改善滑动手感
+        directionalLockEnabled={true} // 锁定滚动方向，提升跟手性
       >
         {/* 头部 */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+          >
             <Feather name="arrow-left" size={20} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>设置</Text>
         </View>
-        
+
         {/* ========== 常用设置 ========== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>常用设置</Text>
         </View>
-        
+
         <View style={{ gap: getSpacing().md }}>
-          {renderMenuCard(
-            '仓库档案',
-            '维护仓库与默认仓库',
-            'box',
-            theme.primary,
-            () => router.push('/warehouse-management')
+          {renderMenuCard('仓库档案', '维护仓库与默认仓库', 'box', theme.primary, () =>
+            router.push('/warehouse-management')
           )}
-          
+
           {renderSwitchCard(
             '扫码提示音',
             '扫码成功、重复、异常反馈',
@@ -1129,7 +1241,7 @@ export default function SettingsScreen() {
             soundEnabled,
             toggleSound
           )}
-          
+
           {renderMenuCard(
             '检查更新',
             `当前版本 ${APP_VERSION}`,
@@ -1140,12 +1252,12 @@ export default function SettingsScreen() {
             checkingUpdate
           )}
         </View>
-        
+
         {/* ========== 扫码解析 ========== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>扫码解析</Text>
         </View>
-        
+
         <View style={{ gap: getSpacing().md }}>
           {renderMenuCard(
             '解析规则',
@@ -1157,7 +1269,7 @@ export default function SettingsScreen() {
             false,
             `${configStats.rules} 条`
           )}
-          
+
           {renderMenuCard(
             '自定义字段',
             '扩展二维码里的业务字段',
@@ -1169,20 +1281,16 @@ export default function SettingsScreen() {
             `${configStats.customFields} 个`
           )}
 
-          {renderMenuCard(
-            '前缀配置',
-            '自动去除 PART NO.、QTY 等前缀',
-            'type',
-            theme.success,
-            () => router.push('/rule-prefixes')
+          {renderMenuCard('前缀配置', '自动去除 PART NO.、QTY 等前缀', 'type', theme.success, () =>
+            router.push('/rule-prefixes')
           )}
         </View>
-        
+
         {/* ========== 电脑同步 ========== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>电脑同步</Text>
         </View>
-        
+
         {/* 服务器配置 */}
         <View style={styles.syncConfigCard}>
           <View style={styles.syncConfigRow}>
@@ -1195,7 +1303,6 @@ export default function SettingsScreen() {
               placeholderTextColor={theme.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
-              
             />
           </View>
           <View style={styles.syncConfigRow}>
@@ -1207,30 +1314,39 @@ export default function SettingsScreen() {
               placeholder="默认: 8080"
               placeholderTextColor={theme.textMuted}
               keyboardType="numeric"
-              
             />
           </View>
           <View style={styles.syncConfigButtons}>
-            <TouchableOpacity style={[
-                styles.syncButton, 
+            <TouchableOpacity
+              style={[
+                styles.syncButton,
                 styles.syncButtonTest,
                 connectionStatus === 'success' && styles.syncButtonSuccess,
-                (connectionStatus === 'error' || connectionStatus === 'disconnected') && styles.syncButtonError,
-              ]} 
-              activeOpacity={0.7} onPress={handleTestConnection}
+                (connectionStatus === 'error' || connectionStatus === 'disconnected') &&
+                  styles.syncButtonError,
+              ]}
+              activeOpacity={0.7}
+              onPress={handleTestConnection}
               disabled={connectionStatus === 'testing'}
             >
               {connectionStatus === 'testing' ? (
                 <ActivityIndicator size="small" color={theme.primary} />
               ) : (
-                <Text style={[
-                  styles.syncButtonTestText,
-                  connectionStatus === 'success' && styles.syncButtonSuccessText,
-                  (connectionStatus === 'error' || connectionStatus === 'disconnected') && styles.syncButtonErrorText,
-                ]}>
-                  {connectionStatus === 'success' ? '已连接 ✓' : 
-                   connectionStatus === 'disconnected' ? '断开连接 ✗' :
-                   connectionStatus === 'error' ? '连接失败 ✗' : '测试连接'}
+                <Text
+                  style={[
+                    styles.syncButtonTestText,
+                    connectionStatus === 'success' && styles.syncButtonSuccessText,
+                    (connectionStatus === 'error' || connectionStatus === 'disconnected') &&
+                      styles.syncButtonErrorText,
+                  ]}
+                >
+                  {connectionStatus === 'success'
+                    ? '已连接 ✓'
+                    : connectionStatus === 'disconnected'
+                      ? '断开连接 ✗'
+                      : connectionStatus === 'error'
+                        ? '连接失败 ✗'
+                        : '测试连接'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -1248,7 +1364,7 @@ export default function SettingsScreen() {
             <Text style={styles.syncStatusHintIdle}>支持局域网IP、公网IP或域名</Text>
           )}
         </View>
-        
+
         {/* 同步按钮 */}
         <View style={{ gap: getSpacing().sm }}>
           {renderMenuCard(
@@ -1260,7 +1376,7 @@ export default function SettingsScreen() {
             !canSync,
             syncingInbound
           )}
-          
+
           {renderMenuCard(
             '同步出库单',
             '导出出库订单到电脑',
@@ -1270,7 +1386,7 @@ export default function SettingsScreen() {
             !canSync,
             syncingOutbound
           )}
-          
+
           {renderMenuCard(
             '同步盘点单',
             '导出库存盘点到电脑',
@@ -1280,7 +1396,7 @@ export default function SettingsScreen() {
             !canSync,
             syncingInventory
           )}
-          
+
           {renderMenuCard(
             '同步盘点标签',
             '导出盘点拆包标签打印数据',
@@ -1290,7 +1406,7 @@ export default function SettingsScreen() {
             !canSync,
             syncingInventoryPartial
           )}
-          
+
           {renderMenuCard(
             '同步订单标签',
             '导出订单拆包标签打印数据',
@@ -1301,7 +1417,7 @@ export default function SettingsScreen() {
             syncingLabels
           )}
         </View>
-        
+
         {/* ========== 数据维护 ========== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>数据维护</Text>
@@ -1379,7 +1495,7 @@ export default function SettingsScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>关于</Text>
         </View>
-        
+
         <View style={styles.aboutCard}>
           {/* App图标和名称 */}
           <View style={styles.aboutAppSection}>
@@ -1391,9 +1507,9 @@ export default function SettingsScreen() {
               <Text style={styles.aboutVersionText}>{APP_VERSION}</Text>
             </View>
           </View>
-          
+
           <View style={styles.aboutDivider} />
-          
+
           {/* 公司信息 */}
           <View style={styles.aboutDetailsSection}>
             <TouchableOpacity
@@ -1419,9 +1535,9 @@ export default function SettingsScreen() {
               <Text style={styles.aboutDetailValue}>{AUTHOR}</Text>
             </View>
           </View>
-          
+
           <View style={styles.aboutDivider} />
-          
+
           {/* 使用说明和更新日志 */}
           <View style={styles.helpRow}>
             <TouchableOpacity
@@ -1429,7 +1545,12 @@ export default function SettingsScreen() {
               activeOpacity={0.7}
               onPress={() => router.push('/help')}
             >
-              <Feather name="book-open" size={rs(14)} color={theme.textMuted} style={styles.helpIconWrapper} />
+              <Feather
+                name="book-open"
+                size={rs(14)}
+                color={theme.textMuted}
+                style={styles.helpIconWrapper}
+              />
               <Text style={styles.helpText}>使用说明</Text>
               <Feather name="chevron-right" size={rs(14)} color={theme.textMuted} />
             </TouchableOpacity>
@@ -1439,17 +1560,22 @@ export default function SettingsScreen() {
               activeOpacity={0.7}
               onPress={() => router.push('/changelog')}
             >
-              <Feather name="clock" size={rs(14)} color={theme.textMuted} style={styles.changelogIconWrapper} />
+              <Feather
+                name="clock"
+                size={rs(14)}
+                color={theme.textMuted}
+                style={styles.changelogIconWrapper}
+              />
               <Text style={styles.changelogText}>更新日志</Text>
               <Feather name="chevron-right" size={rs(14)} color={theme.textMuted} />
             </TouchableOpacity>
           </View>
         </View>
-        
+
         {/* 底部留白 */}
         <View style={{ height: Spacing['4xl'] }} />
       </ScrollView>
-      
+
       {/* ==================== 在线更新模态框 ==================== */}
       <Modal
         visible={updateModalVisible}
@@ -1463,128 +1589,133 @@ export default function SettingsScreen() {
         >
           <View style={styles.updateModalOverlay}>
             <View style={styles.modalContent}>
-            {/* Header */}
-            <View style={styles.updateModalHeader}>
-              <Text style={styles.updateModalTitle}>发现新版本</Text>
-              {!downloading && (
-                <TouchableOpacity onPress={() => {
-                  setUpdateModalVisible(false);
-                  setUpdateServerEditing(false);
-                }}>
-                  <Feather name="x" size={20} color={theme.textPrimary} />
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            {/* Body */}
-            <ScrollView
-              style={styles.updateModalBody}
-              contentContainerStyle={styles.updateModalBodyContent}
-              keyboardShouldPersistTaps="handled"
-              removeClippedSubviews={true}
-              scrollEventThrottle={16}
-            >
-              {updateInfo && (
-                <>
-                  {/* 版本信息 */}
-                  <View style={styles.updateVersionInfo}>
-                    <Text style={styles.updateVersionLabel}>新版本</Text>
-                    <Text style={styles.updateVersionText}>V{updateInfo.version}</Text>
-                  </View>
-                  
-                  {/* 更新日志 */}
-                  <Text style={styles.updateChangelogTitle}>更新内容</Text>
-                  <Text style={styles.updateChangelogText}>{updateInfo.changelog}</Text>
-                  
-                  {/* 下载进度 */}
-                  {downloading && (
-                    <View style={styles.downloadProgress}>
-                      <View style={styles.progressBarContainer}>
-                        <View 
-                          style={[
-                            styles.progressBar, 
-                            { width: `${downloadProgress}%` }
-                          ]} 
-                        />
-                      </View>
-                      <Text style={styles.progressText}>
-                        下载中... {downloadProgress}%
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-              
-              {/* 更新服务器地址配置 */}
-              {updateServerEditing && (
-                <View style={styles.updateServerConfig}>
-                  <Text style={styles.updateServerLabel}>更新服务器地址</Text>
-                  <TextInput
-                    style={styles.updateServerInput}
-                    value={updateServerDisplayUrl}
-                    onChangeText={setUpdateServerDisplayUrl}
-                    placeholder="输入服务器地址"
-                    placeholderTextColor={theme.textMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={true}
-                  />
-                  <View style={styles.updateServerButtons}>
-                    <TouchableOpacity style={styles.updateServerCancelBtn}
-                      activeOpacity={0.7} onPress={() => {
-                        setUpdateServerEditing(false);
-                      }}
-                    >
-                      <Text style={styles.updateServerCancelText}>取消</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.updateServerSaveBtn}
-                      activeOpacity={0.7} onPress={saveUpdateServer}
-                    >
-                      <Text style={styles.updateServerSaveText}>保存</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-            
-            {/* Footer */}
-            {!downloading && (
-              <View style={styles.updateModalFooter}>
-                {!updateServerEditing && (
+              {/* Header */}
+              <View style={styles.updateModalHeader}>
+                <Text style={styles.updateModalTitle}>发现新版本</Text>
+                {!downloading && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setUpdateModalVisible(false);
+                      setUpdateServerEditing(false);
+                    }}
+                  >
+                    <Feather name="x" size={20} color={theme.textPrimary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Body */}
+              <ScrollView
+                style={styles.updateModalBody}
+                contentContainerStyle={styles.updateModalBodyContent}
+                keyboardShouldPersistTaps="handled"
+                removeClippedSubviews={true}
+                scrollEventThrottle={16}
+              >
+                {updateInfo && (
                   <>
-                    <TouchableOpacity style={styles.updateServerLinkBtn}
-                      activeOpacity={0.7} onPress={() => {
-                        setUpdateServerDisplayUrl(extractDisplayUrl(updateServerUrl));
-                        setUpdateServerEditing(true);
-                      }}
-                    >
-                      <Text style={styles.updateServerLinkText}>修改服务器地址</Text>
-                    </TouchableOpacity>
-                    
-                    <View style={styles.updateButtons}>
-                      <TouchableOpacity style={styles.updateCancelBtn}
-                        activeOpacity={0.7} onPress={() => {
-                          setUpdateModalVisible(false);
+                    {/* 版本信息 */}
+                    <View style={styles.updateVersionInfo}>
+                      <Text style={styles.updateVersionLabel}>新版本</Text>
+                      <Text style={styles.updateVersionText}>V{updateInfo.version}</Text>
+                    </View>
+
+                    {/* 更新日志 */}
+                    <Text style={styles.updateChangelogTitle}>更新内容</Text>
+                    <Text style={styles.updateChangelogText}>{updateInfo.changelog}</Text>
+
+                    {/* 下载进度 */}
+                    {downloading && (
+                      <View style={styles.downloadProgress}>
+                        <View style={styles.progressBarContainer}>
+                          <View style={[styles.progressBar, { width: `${downloadProgress}%` }]} />
+                        </View>
+                        <Text style={styles.progressText}>下载中... {downloadProgress}%</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* 更新服务器地址配置 */}
+                {updateServerEditing && (
+                  <View style={styles.updateServerConfig}>
+                    <Text style={styles.updateServerLabel}>更新服务器地址</Text>
+                    <TextInput
+                      style={styles.updateServerInput}
+                      value={updateServerDisplayUrl}
+                      onChangeText={setUpdateServerDisplayUrl}
+                      placeholder="输入服务器地址"
+                      placeholderTextColor={theme.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={true}
+                    />
+                    <View style={styles.updateServerButtons}>
+                      <TouchableOpacity
+                        style={styles.updateServerCancelBtn}
+                        activeOpacity={0.7}
+                        onPress={() => {
                           setUpdateServerEditing(false);
                         }}
                       >
-                        <Text style={styles.updateCancelText}>稍后再说</Text>
+                        <Text style={styles.updateServerCancelText}>取消</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.updateInstallBtn}
-                        activeOpacity={0.7} onPress={downloadAndInstall}
+                      <TouchableOpacity
+                        style={styles.updateServerSaveBtn}
+                        activeOpacity={0.7}
+                        onPress={saveUpdateServer}
                       >
-                        <Text style={styles.updateInstallText}>下载安装</Text>
+                        <Text style={styles.updateServerSaveText}>保存</Text>
                       </TouchableOpacity>
                     </View>
-                  </>
+                  </View>
                 )}
-              </View>
-            )}
+              </ScrollView>
+
+              {/* Footer */}
+              {!downloading && (
+                <View style={styles.updateModalFooter}>
+                  {!updateServerEditing && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.updateServerLinkBtn}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setUpdateServerDisplayUrl(extractDisplayUrl(updateServerUrl));
+                          setUpdateServerEditing(true);
+                        }}
+                      >
+                        <Text style={styles.updateServerLinkText}>修改服务器地址</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.updateButtons}>
+                        <TouchableOpacity
+                          style={styles.updateCancelBtn}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            setUpdateModalVisible(false);
+                            setUpdateServerEditing(false);
+                          }}
+                        >
+                          <Text style={styles.updateCancelText}>稍后再说</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.updateInstallBtn}
+                          activeOpacity={0.7}
+                          onPress={downloadAndInstall}
+                        >
+                          <Text style={styles.updateInstallText}>下载安装</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
           </View>
-        </View>
         </KeyboardAvoidingView>
       </Modal>
-      
+
       {alert.AlertComponent}
 
       {/* 数据库恢复后的重启提示弹窗 - 强制重启 */}
@@ -1605,17 +1736,11 @@ export default function SettingsScreen() {
 
             <Text style={styles.restartModalTitle}>数据库恢复成功</Text>
 
-            <Text style={styles.restartModalMessage}>
-              数据库已成功恢复到备份状态。
-            </Text>
+            <Text style={styles.restartModalMessage}>数据库已成功恢复到备份状态。</Text>
 
             <View style={styles.restartModalWarningContainer}>
-              <Text style={styles.restartModalWarning}>
-                ⚠️ 必须重启应用才能继续使用
-              </Text>
-              <Text style={styles.restartModalWarningSub}>
-                未重启可能导致数据错乱
-              </Text>
+              <Text style={styles.restartModalWarning}>⚠️ 必须重启应用才能继续使用</Text>
+              <Text style={styles.restartModalWarningSub}>未重启可能导致数据错乱</Text>
             </View>
 
             <TouchableOpacity
