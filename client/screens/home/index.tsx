@@ -11,7 +11,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Screen } from '@/components/Screen';
 import { createStyles } from './styles';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
-import { initDatabase, getAllMaterials } from '@/utils/database';
+import { getAllMaterials, getAllWarehouses, initDatabase } from '@/utils/database';
 import { ModuleColors } from '@/constants/theme';
 import { Str } from '@/resources/strings';
 import { WarehouseGuide, shouldShowWarehouseGuide, markWarehouseGuideShown } from '@/components/WarehouseGuide';
@@ -100,15 +100,22 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    initDatabase().catch(console.error);
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
     const checkWarehouseGuide = async () => {
       try {
-        const materials = await getAllMaterials();
-        const needsGuide = await shouldShowWarehouseGuide(materials.length > 0);
-        if (needsGuide) {
+        await initDatabase();
+
+        const [warehouses, materials] = await Promise.all([
+          getAllWarehouses(),
+          getAllMaterials(),
+        ]);
+        const needsGuide = await shouldShowWarehouseGuide({
+          hasBusinessData: materials.length > 0,
+          hasWarehouseConfig: warehouses.length > 0,
+        });
+
+        if (!cancelled && needsGuide) {
           setShowWarehouseGuide(true);
         }
       } catch (error) {
@@ -117,6 +124,10 @@ export default function HomeScreen() {
     };
 
     checkWarehouseGuide();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const moduleColors = theme.isDark ? [

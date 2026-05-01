@@ -741,14 +741,15 @@ export default function PDAScanScreen() {
             parsed.sourceNo,
             parsed.traceNo,
             parsed.quantity,
-            currentWarehouse.id
+            currentWarehouse.id,
+            code
           ),
           getInventoryCodeByModel(parsed.model || ''),
         ]);
         console.log('[扫码出库] 重复检查结果:', check);
         console.log('[扫码出库] 存货编码:', inventoryCode);
 
-        if (check.material) {
+        if (check.material && !check.canRescan) {
           showToast('⚠️ 该物料已扫码，请勿重复', 'warning');
           feedbackDuplicate();
           return;

@@ -1,5 +1,6 @@
 import cors, { type CorsOptions } from 'cors';
 import express, { type Request, type Response } from 'express';
+import { strFromU8, unzipSync } from 'fflate';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -91,7 +92,7 @@ const hasZipSignature = (rawBody: Buffer): boolean => {
   return signatures.some((signature) => rawBody.subarray(0, 4).equals(signature));
 };
 
-const XLSX_REQUIRED_ENTRY_MARKERS = [
+const XLSX_REQUIRED_ENTRIES = [
   '[Content_Types].xml',
   '_rels/.rels',
   'xl/workbook.xml',
@@ -102,9 +103,29 @@ const hasValidXlsxSignature = (rawBody: Buffer): boolean => {
     return false;
   }
 
-  return XLSX_REQUIRED_ENTRY_MARKERS.every((entryMarker) =>
-    rawBody.includes(Buffer.from(entryMarker, 'utf8'))
-  );
+  try {
+    const archiveEntries = unzipSync(new Uint8Array(rawBody));
+
+    if (!XLSX_REQUIRED_ENTRIES.every((entryName) => entryName in archiveEntries)) {
+      return false;
+    }
+
+    const contentTypesXml = strFromU8(archiveEntries['[Content_Types].xml']);
+    const rootRelationshipsXml = strFromU8(archiveEntries['_rels/.rels']);
+    const workbookXml = strFromU8(archiveEntries['xl/workbook.xml']);
+
+    return (
+      contentTypesXml.includes('<Types') &&
+      contentTypesXml.includes('/xl/workbook.xml') &&
+      rootRelationshipsXml.includes('<Relationships') &&
+      rootRelationshipsXml.includes('officeDocument') &&
+      rootRelationshipsXml.includes('xl/workbook.xml') &&
+      workbookXml.includes('<workbook')
+    );
+  } catch (error) {
+    console.error('[xlsx] 文件结构校验失败:', error);
+    return false;
+  }
 };
 
 const handleExcelUpload =

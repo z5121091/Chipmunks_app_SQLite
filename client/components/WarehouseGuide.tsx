@@ -80,12 +80,16 @@ export function WarehouseGuide({ visible, onSkip, onGoToSettings }: WarehouseGui
 
 /**
  * 检查并标记仓库引导是否已显示
- * @param hasBusinessData 是否已有业务数据（订单/物料）
+ * @param options.hasBusinessData 是否已有业务数据（订单/物料）
+ * @param options.hasWarehouseConfig 是否已有仓库配置
  * @returns 是否需要显示引导
  */
-export async function shouldShowWarehouseGuide(hasBusinessData: boolean): Promise<boolean> {
-  // 如果已有业务数据，不显示引导
-  if (hasBusinessData) {
+export async function shouldShowWarehouseGuide(options: {
+  hasBusinessData: boolean;
+  hasWarehouseConfig: boolean;
+}): Promise<boolean> {
+  // 如果已有业务数据或已有仓库配置，不显示引导
+  if (options.hasBusinessData || options.hasWarehouseConfig) {
     return false;
   }
 

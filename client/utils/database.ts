@@ -2658,7 +2658,8 @@ export const checkMaterialExists = async (
   sourceNo?: string,
   traceNo?: string,
   quantity?: string,
-  warehouseId?: string // 添加 warehouse_id 参数
+  warehouseId?: string, // 添加 warehouse_id 参数
+  rawContent?: string
 ): Promise<{ material: MaterialRecord | null; isUnpacked: boolean; canRescan: boolean }> => {
   try {
     const database = getDb();
@@ -2669,84 +2670,100 @@ export const checkMaterialExists = async (
       return { material: null, isUnpacked: false, canRescan: false };
     }
 
-    // 只检测追踪码
-    if (traceNo && typeof traceNo === 'string' && traceNo.trim() !== '') {
-      const trimmedTraceNo = traceNo.trim();
-      const trimmedOrderNo = orderNo.trim();
+    const trimmedOrderNo = orderNo.trim();
+    const normalizedWarehouseId =
+      warehouseId && typeof warehouseId === 'string' && warehouseId.trim() !== ''
+        ? warehouseId.trim()
+        : null;
+    const duplicateIdentifier =
+      traceNo && typeof traceNo === 'string' && traceNo.trim() !== ''
+        ? {
+            field: 'traceNo' as const,
+            value: traceNo.trim(),
+            label: 'traceNo',
+          }
+        : rawContent && typeof rawContent === 'string' && rawContent.trim() !== ''
+          ? {
+              field: 'raw_content' as const,
+              value: rawContent.trim(),
+              label: 'raw_content',
+            }
+          : null;
 
-      // 构建查询条件
-      let sql = 'SELECT * FROM materials WHERE order_no = ? AND traceNo = ?';
-      const sqlParams: any[] = [trimmedOrderNo, trimmedTraceNo];
+    if (!duplicateIdentifier) {
+      return { material: null, isUnpacked: false, canRescan: false };
+    }
 
-      // 只有当 warehouseId 存在且不为空字符串时才添加条件
-      if (warehouseId && typeof warehouseId === 'string' && warehouseId.trim() !== '') {
-        sql += ' AND warehouse_id = ?';
-        sqlParams.push(warehouseId.trim());
+    const mapMaterialRecord = (record: any): MaterialRecord => ({
+      ...record,
+      customFields: stringToJson<Record<string, string>>(record.customFields),
+      isUnpacked: record.isUnpacked === 1,
+    });
+
+    let sql = `SELECT * FROM materials WHERE order_no = ? AND ${duplicateIdentifier.field} = ?`;
+    const sqlParams: any[] = [trimmedOrderNo, duplicateIdentifier.value];
+
+    if (normalizedWarehouseId) {
+      sql += ' AND warehouse_id = ?';
+      sqlParams.push(normalizedWarehouseId);
+    }
+
+    console.log(
+      `[checkMaterialExists] SameOrder ${duplicateIdentifier.label} SQL:`,
+      sql,
+      'Params:',
+      sqlParams
+    );
+
+    const existingInSameOrder = await database.getFirstAsync<any>(sql, sqlParams);
+
+    if (existingInSameOrder) {
+      const material = mapMaterialRecord(existingInSameOrder);
+
+      if (material.isUnpacked) {
+        return { material, isUnpacked: true, canRescan: true };
       }
 
-      console.log('[checkMaterialExists] SQL:', sql, 'Params:', sqlParams);
+      return { material, isUnpacked: false, canRescan: false };
+    }
 
-      // 检查同一订单下是否有相同追踪码
-      const existingInSameOrder = await database.getFirstAsync<any>(sql, sqlParams);
+    let otherOrderSql = `SELECT * FROM materials WHERE order_no != ? AND ${duplicateIdentifier.field} = ?`;
+    const otherOrderParams: any[] = [trimmedOrderNo, duplicateIdentifier.value];
 
-      if (existingInSameOrder) {
-        const material = {
-          ...existingInSameOrder,
-          customFields: stringToJson<Record<string, string>>(existingInSameOrder.customFields),
-          isUnpacked: existingInSameOrder.isUnpacked === 1,
-        };
+    if (normalizedWarehouseId) {
+      otherOrderSql += ' AND warehouse_id = ?';
+      otherOrderParams.push(normalizedWarehouseId);
+    }
 
-        if (material.isUnpacked) {
-          return { material, isUnpacked: true, canRescan: true };
-        }
+    console.log(
+      `[checkMaterialExists] OtherOrder ${duplicateIdentifier.label} SQL:`,
+      otherOrderSql,
+      'Params:',
+      otherOrderParams
+    );
+
+    const existingInOtherOrder = await database.getFirstAsync<any>(otherOrderSql, otherOrderParams);
+
+    if (existingInOtherOrder) {
+      const scanQty =
+        quantity != null && quantity !== '' ? parseQuantity(quantity, { min: 0 }) : null;
+      const remainingQty =
+        parseQuantity(existingInOtherOrder.remaining_quantity, { min: 0 }) ??
+        parseQuantity(existingInOtherOrder.quantity, { min: 0 });
+      const material = mapMaterialRecord(existingInOtherOrder);
+      const materialQty = parseQuantity(material.quantity, { min: 0 });
+
+      if (
+        material.isUnpacked &&
+        scanQty !== null &&
+        remainingQty !== null &&
+        scanQty === remainingQty
+      ) {
+        return { material: null, isUnpacked: false, canRescan: false };
+      }
+
+      if (scanQty !== null && materialQty !== null && scanQty === materialQty) {
         return { material, isUnpacked: false, canRescan: false };
-      }
-
-      // 检查不同订单下是否有相同追踪码（需要考虑仓库）
-      let otherOrderSql = 'SELECT * FROM materials WHERE order_no != ? AND traceNo = ?';
-      const otherOrderParams: any[] = [trimmedOrderNo, trimmedTraceNo];
-
-      // 只有当 warehouseId 存在且不为空字符串时才添加条件
-      if (warehouseId && typeof warehouseId === 'string' && warehouseId.trim() !== '') {
-        otherOrderSql += ' AND warehouse_id = ?';
-        otherOrderParams.push(warehouseId.trim());
-      }
-
-      console.log(
-        '[checkMaterialExists] OtherOrder SQL:',
-        otherOrderSql,
-        'Params:',
-        otherOrderParams
-      );
-
-      const existingInOtherOrder = await database.getFirstAsync<any>(
-        otherOrderSql,
-        otherOrderParams
-      );
-
-      if (existingInOtherOrder) {
-        const scanQty =
-          quantity != null && quantity !== '' ? parseQuantity(quantity, { min: 0 }) : null;
-        const remainingQty =
-          parseQuantity(existingInOtherOrder.remaining_quantity, { min: 0 }) ??
-          parseQuantity(existingInOtherOrder.quantity, { min: 0 });
-        const material = {
-          ...existingInOtherOrder,
-          customFields: stringToJson<Record<string, string>>(existingInOtherOrder.customFields),
-          isUnpacked: existingInOtherOrder.isUnpacked === 1,
-        };
-        const materialQty = parseQuantity(material.quantity, { min: 0 });
-
-        if (
-          material.isUnpacked &&
-          scanQty !== null &&
-          remainingQty !== null &&
-          scanQty === remainingQty
-        ) {
-          return { material: null, isUnpacked: false, canRescan: false };
-        } else if (scanQty !== null && materialQty !== null && scanQty === materialQty) {
-          return { material, isUnpacked: false, canRescan: false };
-        }
       }
     }
 
