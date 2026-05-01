@@ -57,8 +57,7 @@ import { feedbackSuccess, feedbackWarning, setSoundEnabled as setSoundEnabledFn,
 import { syncExcelToComputer, ExcelSheet } from '@/utils/excel';
 import { safeJsonParseNullable } from '@/utils/json';
 import { 
-  testConnection, 
-  useHeartbeat 
+  testConnection 
 } from '@/utils/heartbeat';
 import {
   UPDATE_CONFIG,
