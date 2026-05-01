@@ -10,7 +10,6 @@ import {
   FlatList,
   SectionList,
   Modal,
-  StatusBar as RNStatusBar,
 } from 'react-native';
 import { useSafeAreaInsets, Edge } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -181,10 +180,6 @@ export const Screen = ({
 }: ScreenProps) => {
   const insets = useSafeAreaInsets();
   const [keyboardShown, setKeyboardShown] = React.useState(false);
-  // 检测 Android 7.0 (API 24) 及以下版本，沉浸式状态栏会导致系统字体不可见
-  const isAndroid7OrBelow = Platform.OS === 'android' 
-    && typeof Platform.Version === 'number' 
-    && Platform.Version <= 24;
 
   // 自动检测：若子树中包含 ScrollView/FlatList/SectionList，则认为页面自身处理滚动
   const isNodeScrollable = (node: React.ReactNode): boolean => {
@@ -297,9 +292,6 @@ export const Screen = ({
     return nodes;
   };
 
-  // Android 7.0 及以下版本不使用沉浸式状态栏
-  const useTranslucent = Platform.OS === 'ios' || !isAndroid7OrBelow;
-  
   // 根据背景色自动判断状态栏背景色
   // 深色背景使用半透明黑色背景，浅色背景使用半透明白色背景
   const isDarkBg = useMemo(() => isColorDark(backgroundColor), [backgroundColor]);
@@ -310,20 +302,11 @@ export const Screen = ({
   return (
     // 核心原则：严禁使用 SafeAreaView，统一使用 View + padding 手动管理
     <View style={wrapperStyle}>
-      {/* 状态栏配置：Android 7.0 特殊处理 */}
-      {isAndroid7OrBelow ? (
-        <RNStatusBar
-          barStyle={statusBarStyle === 'light' ? 'light-content' : 'dark-content'}
-          backgroundColor="#FFFFFF"
-          translucent={false}
-        />
-      ) : (
-        <StatusBar
-          style={statusBarStyle}
-          backgroundColor={statusBarBgColor}
-          translucent={statusBarColor === 'transparent' ? true : false}
-        />
-      )}
+      <StatusBar
+        style={statusBarStyle}
+        backgroundColor={statusBarBgColor}
+        translucent={statusBarColor === 'transparent'}
+      />
 
       {/* 键盘避让：仅当外层使用 ScrollView 时启用，避免固定底部栏随键盘上移 */}
       {useScrollContainer ? (

@@ -8,7 +8,7 @@
  * - 主题色: useTheme().theme.success
  */
 
-import { Platform, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 
 // ============================================
 // 颜色定义
@@ -127,18 +127,12 @@ const getThemeColor = (
 // 半透明颜色工厂函数
 // ============================================
 
-// Android 7.0 及以下不支持透明色
-const isLowAndroid = Platform.OS === 'android' && Number(Platform.Version) <= 24;
-
 /**
  * 创建带透明度的颜色
  * @param hex 基础颜色（#RRGGBB 格式）
  * @param alpha 透明度（0-1）
  */
 export const withAlpha = (hex: string, alpha: number): string => {
-  if (isLowAndroid) {
-    return hex;
-  }
   const { r, g, b } = hexToRgb(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };

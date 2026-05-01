@@ -59,7 +59,7 @@ export const parseAuthFromUrl = (
 };
 
 /**
- * Base64 编码（兼容 Android 7.0）
+ * Base64 编码
  */
 export const base64Encode = (str: string): string => {
   return Base64.encode(str);
