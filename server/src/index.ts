@@ -1,6 +1,6 @@
 import cors, { type CorsOptions } from 'cors';
 import express, { type Request, type Response } from 'express';
-import { strFromU8, unzipSync } from 'fflate';
+import { inflateSync, strFromU8 } from 'fflate';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -98,21 +98,202 @@ const XLSX_REQUIRED_ENTRIES = [
   'xl/workbook.xml',
 ];
 
+const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
+const ZIP_MAX_COMMENT_LENGTH = 0xffff;
+const ZIP_END_OF_CENTRAL_DIRECTORY_LENGTH = 22;
+const MAX_XLSX_CENTRAL_DIRECTORY_SIZE = 2 * 1024 * 1024;
+const MAX_XLSX_CENTRAL_DIRECTORY_ENTRIES = 1024;
+const MAX_XLSX_XML_ENTRY_COMPRESSED_SIZE = 256 * 1024;
+const MAX_XLSX_XML_ENTRY_UNCOMPRESSED_SIZE = 512 * 1024;
+
+type ZipEntryMetadata = {
+  compressedSize: number;
+  compressionMethod: number;
+  flags: number;
+  localHeaderOffset: number;
+  name: string;
+  uncompressedSize: number;
+};
+
+const findEndOfCentralDirectoryOffset = (rawBody: Buffer): number => {
+  const searchStart = Math.max(
+    0,
+    rawBody.length - ZIP_END_OF_CENTRAL_DIRECTORY_LENGTH - ZIP_MAX_COMMENT_LENGTH
+  );
+
+  for (
+    let offset = rawBody.length - ZIP_END_OF_CENTRAL_DIRECTORY_LENGTH;
+    offset >= searchStart;
+    offset -= 1
+  ) {
+    if (rawBody.readUInt32LE(offset) === ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+      return offset;
+    }
+  }
+
+  return -1;
+};
+
+const parseZipCentralDirectory = (rawBody: Buffer): Map<string, ZipEntryMetadata> | null => {
+  const endOfCentralDirectoryOffset = findEndOfCentralDirectoryOffset(rawBody);
+  if (endOfCentralDirectoryOffset < 0) {
+    return null;
+  }
+
+  const entryCount = rawBody.readUInt16LE(endOfCentralDirectoryOffset + 10);
+  const centralDirectorySize = rawBody.readUInt32LE(endOfCentralDirectoryOffset + 12);
+  const centralDirectoryOffset = rawBody.readUInt32LE(endOfCentralDirectoryOffset + 16);
+
+  if (
+    entryCount === 0xffff ||
+    centralDirectorySize === 0xffffffff ||
+    centralDirectoryOffset === 0xffffffff
+  ) {
+    return null;
+  }
+
+  if (
+    entryCount === 0 ||
+    entryCount > MAX_XLSX_CENTRAL_DIRECTORY_ENTRIES ||
+    centralDirectorySize === 0 ||
+    centralDirectorySize > MAX_XLSX_CENTRAL_DIRECTORY_SIZE
+  ) {
+    return null;
+  }
+
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+  if (
+    centralDirectoryOffset < 0 ||
+    centralDirectoryOffset >= rawBody.length ||
+    centralDirectoryEnd > rawBody.length
+  ) {
+    return null;
+  }
+
+  const entries = new Map<string, ZipEntryMetadata>();
+  let cursor = centralDirectoryOffset;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (cursor + 46 > centralDirectoryEnd) {
+      return null;
+    }
+
+    if (rawBody.readUInt32LE(cursor) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+      return null;
+    }
+
+    const flags = rawBody.readUInt16LE(cursor + 8);
+    const compressionMethod = rawBody.readUInt16LE(cursor + 10);
+    const compressedSize = rawBody.readUInt32LE(cursor + 20);
+    const uncompressedSize = rawBody.readUInt32LE(cursor + 24);
+    const fileNameLength = rawBody.readUInt16LE(cursor + 28);
+    const extraFieldLength = rawBody.readUInt16LE(cursor + 30);
+    const commentLength = rawBody.readUInt16LE(cursor + 32);
+    const localHeaderOffset = rawBody.readUInt32LE(cursor + 42);
+    const fileNameStart = cursor + 46;
+    const fileNameEnd = fileNameStart + fileNameLength;
+
+    if (fileNameEnd > centralDirectoryEnd) {
+      return null;
+    }
+
+    const name = rawBody.toString('utf8', fileNameStart, fileNameEnd);
+    entries.set(name, {
+      compressedSize,
+      compressionMethod,
+      flags,
+      localHeaderOffset,
+      name,
+      uncompressedSize,
+    });
+
+    cursor = fileNameEnd + extraFieldLength + commentLength;
+  }
+
+  return entries;
+};
+
+const extractZipEntryText = (
+  rawBody: Buffer,
+  entry: ZipEntryMetadata
+): string | null => {
+  if (entry.flags & 0x1) {
+    return null;
+  }
+
+  if (
+    entry.compressedSize > MAX_XLSX_XML_ENTRY_COMPRESSED_SIZE ||
+    entry.uncompressedSize > MAX_XLSX_XML_ENTRY_UNCOMPRESSED_SIZE
+  ) {
+    return null;
+  }
+
+  if (entry.localHeaderOffset + 30 > rawBody.length) {
+    return null;
+  }
+
+  if (rawBody.readUInt32LE(entry.localHeaderOffset) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+    return null;
+  }
+
+  const localFileNameLength = rawBody.readUInt16LE(entry.localHeaderOffset + 26);
+  const localExtraFieldLength = rawBody.readUInt16LE(entry.localHeaderOffset + 28);
+  const payloadStart = entry.localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+  const payloadEnd = payloadStart + entry.compressedSize;
+
+  if (payloadEnd > rawBody.length) {
+    return null;
+  }
+
+  const payload = rawBody.subarray(payloadStart, payloadEnd);
+
+  try {
+    if (entry.compressionMethod === 0) {
+      if (entry.compressedSize !== entry.uncompressedSize) {
+        return null;
+      }
+      return strFromU8(payload);
+    }
+
+    if (entry.compressionMethod === 8) {
+      const inflated = inflateSync(new Uint8Array(payload), {
+        out: new Uint8Array(entry.uncompressedSize),
+      });
+      return strFromU8(inflated);
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[xlsx] 解压条目失败: ${entry.name}`, error);
+    return null;
+  }
+};
+
 const hasValidXlsxSignature = (rawBody: Buffer): boolean => {
   if (!hasZipSignature(rawBody)) {
     return false;
   }
 
   try {
-    const archiveEntries = unzipSync(new Uint8Array(rawBody));
-
-    if (!XLSX_REQUIRED_ENTRIES.every((entryName) => entryName in archiveEntries)) {
+    const archiveEntries = parseZipCentralDirectory(rawBody);
+    if (!archiveEntries) {
       return false;
     }
 
-    const contentTypesXml = strFromU8(archiveEntries['[Content_Types].xml']);
-    const rootRelationshipsXml = strFromU8(archiveEntries['_rels/.rels']);
-    const workbookXml = strFromU8(archiveEntries['xl/workbook.xml']);
+    const requiredEntries = XLSX_REQUIRED_ENTRIES.map((entryName) => archiveEntries.get(entryName));
+    if (requiredEntries.some((entry) => !entry)) {
+      return false;
+    }
+
+    const contentTypesXml = extractZipEntryText(rawBody, requiredEntries[0]!);
+    const rootRelationshipsXml = extractZipEntryText(rawBody, requiredEntries[1]!);
+    const workbookXml = extractZipEntryText(rawBody, requiredEntries[2]!);
+
+    if (!contentTypesXml || !rootRelationshipsXml || !workbookXml) {
+      return false;
+    }
 
     return (
       contentTypesXml.includes('<Types') &&

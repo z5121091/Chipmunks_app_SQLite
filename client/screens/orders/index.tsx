@@ -74,6 +74,11 @@ interface CustomAlertConfig {
   buttons: { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }[];
 }
 
+interface DeferredTimerEntry {
+  timerId: ReturnType<typeof setTimeout>;
+  resolve: (isActive: boolean) => void;
+}
+
 export default function OrdersScreen() {
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -118,11 +123,39 @@ export default function OrdersScreen() {
   const pendingExpandOrderNo = useRef<string | null>(null);
   const pendingMaterialId = useRef<number | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenActiveRef = useRef(true);
+  const deferredActionTimersRef = useRef<Set<DeferredTimerEntry>>(new Set());
 
   // 同步 ref
   useEffect(() => {
     expandedOrderIdRef.current = expandedOrderId;
   }, [expandedOrderId]);
+
+  const clearDeferredActionTimers = useCallback(() => {
+    deferredActionTimersRef.current.forEach((entry) => {
+      clearTimeout(entry.timerId);
+      entry.resolve(false);
+    });
+    deferredActionTimersRef.current.clear();
+  }, []);
+
+  const waitForUiFlush = useCallback((delay = 50) => {
+    return new Promise<boolean>((resolve) => {
+      if (!screenActiveRef.current) {
+        resolve(false);
+        return;
+      }
+
+      const entry = {} as DeferredTimerEntry;
+      entry.resolve = resolve;
+      entry.timerId = setTimeout(() => {
+        deferredActionTimersRef.current.delete(entry);
+        resolve(screenActiveRef.current);
+      }, delay);
+
+      deferredActionTimersRef.current.add(entry);
+    });
+  }, []);
 
   // 自定义弹窗
   const [customAlert, setCustomAlert] = useState<CustomAlertConfig>({
@@ -238,6 +271,8 @@ export default function OrdersScreen() {
 
   useEffect(
     () => () => {
+      screenActiveRef.current = false;
+      clearDeferredActionTimers();
       if (editMaterialFocusTimerRef.current) {
         clearTimeout(editMaterialFocusTimerRef.current);
         editMaterialFocusTimerRef.current = null;
@@ -247,7 +282,7 @@ export default function OrdersScreen() {
         editMaterialScrollTimerRef.current = null;
       }
     },
-    []
+    [clearDeferredActionTimers]
   );
 
   // 同步配置
@@ -268,8 +303,14 @@ export default function OrdersScreen() {
   // 页面加载时获取同步配置
   useFocusEffect(
     useCallback(() => {
+      screenActiveRef.current = true;
       loadSyncConfig();
-    }, [loadSyncConfig])
+
+      return () => {
+        screenActiveRef.current = false;
+        clearDeferredActionTimers();
+      };
+    }, [clearDeferredActionTimers, loadSyncConfig])
   );
 
   // 拆包弹窗样式
@@ -718,7 +759,9 @@ export default function OrdersScreen() {
             try {
               await deleteMaterial(material.id!);
               // 短暂延迟确保 AsyncStorage 写入完成
-              await new Promise((resolve) => setTimeout(resolve, 50));
+              if (!(await waitForUiFlush())) {
+                return;
+              }
               const materials = await getMaterialsByOrder(material.order_no, currentWarehouse?.id);
               setExpandedMaterials(materials);
               await loadData();
@@ -812,7 +855,9 @@ export default function OrdersScreen() {
       });
 
       // 2. 刷新物料列表（短暂延迟确保 AsyncStorage 写入完成）
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!(await waitForUiFlush())) {
+        return;
+      }
       const materials = await getMaterialsByOrder(unpackingMaterial.order_no, currentWarehouse?.id);
       setExpandedMaterials(materials);
       await loadData();
@@ -949,15 +994,19 @@ export default function OrdersScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       // 检查响应状态
       if (!response.ok) {
@@ -1067,7 +1116,9 @@ export default function OrdersScreen() {
       });
 
       // 刷新物料列表（短暂延迟确保 AsyncStorage 写入完成）
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!(await waitForUiFlush())) {
+        return;
+      }
       const materials = await getMaterialsByOrder(editingMaterial.order_no, currentWarehouse?.id);
       setExpandedMaterials(materials);
       await loadData();

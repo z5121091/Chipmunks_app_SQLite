@@ -5235,12 +5235,14 @@ export const importBackupData = async (
 ): Promise<{
   success: boolean;
   message: string;
+  warnings?: string[];
   stats?: {
     rules: number;
     customFields: number;
     inventoryBindings: number;
     warehouses: number;
     hasSyncConfig?: boolean;
+    syncConfigRestored?: boolean;
   };
 }> => {
   try {
@@ -5379,31 +5381,39 @@ export const importBackupData = async (
       throw error;
     }
 
+    const warnings: string[] = [];
+    let syncConfigRestored = !backup.syncConfig;
+
     // 7. 导入同步服务器配置
     if (backup.syncConfig) {
       try {
         await AsyncStorage.setItem(STORAGE_KEYS.SYNC_CONFIG, JSON.stringify(backup.syncConfig));
+        syncConfigRestored = true;
       } catch (e) {
         console.error('导入同步配置失败:', e);
-        // 同步配置导入失败不影响整体，跳过
+        warnings.push('同步服务器配置未能写入本地存储，请在设置页重新确认服务器地址和端口。');
       }
     } else {
       try {
         await AsyncStorage.removeItem(STORAGE_KEYS.SYNC_CONFIG);
+        syncConfigRestored = true;
       } catch (e) {
         console.error('清理旧同步配置失败:', e);
+        warnings.push('旧的同步服务器配置未能清理，本地可能仍保留之前的服务器地址。');
       }
     }
 
     return {
       success: true,
-      message: '配置导入成功',
+      message: warnings.length > 0 ? '配置已导入，但部分本地配置未能完成恢复' : '配置导入成功',
+      warnings: warnings.length > 0 ? warnings : undefined,
       stats: {
         rules: backup.rules?.length || 0,
         customFields: backup.customFields?.length || 0,
         inventoryBindings: backup.inventoryBindings?.length || 0,
         warehouses: backup.warehouses?.length || 0,
         hasSyncConfig: !!backup.syncConfig,
+        syncConfigRestored,
       },
     };
   } catch (error) {

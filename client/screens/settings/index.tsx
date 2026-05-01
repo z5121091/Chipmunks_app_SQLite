@@ -1006,9 +1006,19 @@ export default function SettingsScreen() {
           try {
             const result = await importBackupData(backupData);
             if (result.success) {
-              alert.showSuccess(
-                `备份时间: ${formatDateTimeExport(backupData.backupTime)}\n\n恢复成功:\n• 解析规则: ${result.stats?.rules || 0} 条\n• 自定义字段: ${result.stats?.customFields || 0} 个\n• 物料绑定: ${result.stats?.inventoryBindings || 0} 条\n• 仓库: ${result.stats?.warehouses || 0} 个\n• 同步服务器: ${result.stats?.hasSyncConfig ? '已恢复' : '未配置'}`
-              );
+              const syncConfigStatus = !result.stats?.hasSyncConfig
+                ? '未配置'
+                : result.stats?.syncConfigRestored
+                  ? '已恢复'
+                  : '恢复失败';
+              const summary =
+                `备份时间: ${formatDateTimeExport(backupData.backupTime)}\n\n恢复成功:\n• 解析规则: ${result.stats?.rules || 0} 条\n• 自定义字段: ${result.stats?.customFields || 0} 个\n• 物料绑定: ${result.stats?.inventoryBindings || 0} 条\n• 仓库: ${result.stats?.warehouses || 0} 个\n• 同步服务器: ${syncConfigStatus}`;
+
+              if (result.warnings?.length) {
+                alert.showWarning(`${summary}\n\n注意:\n• ${result.warnings.join('\n• ')}`);
+              } else {
+                alert.showSuccess(summary);
+              }
               loadData();
             } else {
               alert.showError(result.message);

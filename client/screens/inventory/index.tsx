@@ -210,6 +210,7 @@ export default function InventoryScreen() {
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const postProcessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenActiveRef = useRef(true);
   const scannerFocusBlockedRef = useRef(false);
   // 扫码队列 - 暂存处理中的新扫码
@@ -375,6 +376,9 @@ export default function InventoryScreen() {
       if (postProcessTimerRef.current) {
         clearTimeout(postProcessTimerRef.current);
       }
+      if (errorActionTimerRef.current) {
+        clearTimeout(errorActionTimerRef.current);
+      }
     },
     []
   );
@@ -516,6 +520,10 @@ export default function InventoryScreen() {
           clearTimeout(postProcessTimerRef.current);
           postProcessTimerRef.current = null;
         }
+        if (errorActionTimerRef.current) {
+          clearTimeout(errorActionTimerRef.current);
+          errorActionTimerRef.current = null;
+        }
       };
     }, [focusScannerInput])
   );
@@ -557,7 +565,15 @@ export default function InventoryScreen() {
         const errorDetail = getErrorDetail('ERR_NO_WAREHOUSE', undefined, router);
         showToast(errorDetail.title, 'error');
         if (errorDetail.action && errorDetail.onPress) {
-          setTimeout(() => errorDetail.onPress!(), 500);
+          if (errorActionTimerRef.current) {
+            clearTimeout(errorActionTimerRef.current);
+          }
+          errorActionTimerRef.current = setTimeout(() => {
+            errorActionTimerRef.current = null;
+            if (screenActiveRef.current) {
+              errorDetail.onPress?.();
+            }
+          }, 500);
         }
         feedbackError();
         return;
