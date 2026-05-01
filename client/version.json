@@ -1,7 +1,7 @@
 {
-  "version": "V1.0",
-  "versionCode": 1,
-  "buildNumber": 1,
+  "version": "V1.01",
+  "versionCode": 2,
+  "buildNumber": 2,
   "downloadUrl": "http://zx5121091:zx5121091Z..@zx5121091.pw:5005/AppUpdate/app-release.apk",
   "forceUpdate": false,
   "appName": "掌上仓库",
@@ -9,6 +9,26 @@
   "companyWebsite": "http://www.chipmunks.com.cn/",
   "author": "zx5121091",
   "changelog": [
+    {
+      "version": "V1.01",
+      "date": "2026-05-20",
+      "changes": [
+        { "type": "fix", "text": "二维码解析：修复空字段导致位置错位问题" },
+        { "type": "fix", "text": "入库/盘点/出库：批量操作改为事务处理，避免部分成功" },
+        { "type": "fix", "text": "拆包流程：增加事务保护，避免半套标签" },
+        { "type": "fix", "text": "出库恢复：修复旧仓库闭包导致订单恢复错误" },
+        { "type": "fix", "text": "数据库：修复版本变化删表、导入后规则失效等问题" },
+        { "type": "fix", "text": "JSON解析：增加安全校验，避免坏缓存打断初始化" },
+        { "type": "fix", "text": "时间排序：统一改为固定宽度格式，避免跨月排序错误" },
+        { "type": "fix", "text": "清空数据：改为事务处理，避免半清空状态" },
+        { "type": "fix", "text": "首页引导：修复卸载重装后误判问题" },
+        { "type": "fix", "text": "定时器：完善清理逻辑，避免离页后继续执行" },
+        { "type": "fix", "text": "XLSX校验：加强文件头和OOXML结构校验" },
+        { "type": "fix", "text": "备份恢复：增加表结构完整性校验" },
+        { "type": "fix", "text": "扫码队列：优化去重逻辑，支持无追踪码兜底" },
+        { "type": "fix", "text": "其他细节优化和问题修复" }
+      ]
+    },
     {
       "version": "V1.0",
       "date": "2026-04-24",
